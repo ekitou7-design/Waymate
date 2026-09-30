@@ -1,5 +1,11 @@
 # 1.75C → 1.75-G 最小迁移分析
 
+**Status:** DEFERRED / FUTURE REFERENCE
+
+This plan is currently deferred. Waymate v1 has returned to Waveshare 1.75C as the target hardware.
+
+本计划暂缓执行，仅保留作为未来 1.75-G 迁移参考；当前 Waymate v1 继续以 Waveshare ESP32-S3-Touch-AMOLED-1.75C 为目标硬件。
+
 **目标板：** Waveshare ESP32-S3-Touch-AMOLED-1.75-G，SKU 31264
 
 **当前状态：** 只做迁移准备和风险核对；不修改代码，不写 LC76G 驱动，不修改 BLE、iOS 或 Backtrack。
