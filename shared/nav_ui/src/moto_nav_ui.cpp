@@ -1427,6 +1427,15 @@ void update_navigation(const moto_ui_state_t *state) {
 }
 
 void update_speedometer(const moto_ui_state_t *state) {
+    const bool has_usable_fix = state->gps_accuracy_m > 0;
+    if(!has_usable_fix) {
+        lv_label_set_text(ui.speed_value, "--");
+        lv_arc_set_value(ui.speed_arc, 0);
+        for(int i = 0; i < kSpeedTickCount; ++i) {
+            lv_obj_set_style_line_color(ui.speed_ticks[i], kGraphite, 0);
+        }
+        return;
+    }
     char value[8];
     std::snprintf(value, sizeof(value), "%u",
                   static_cast<unsigned>(state->speed_kph));
@@ -1440,17 +1449,24 @@ void update_speedometer(const moto_ui_state_t *state) {
 }
 
 void update_compass(const moto_ui_state_t *state) {
-    char heading[12];
-    std::snprintf(heading, sizeof(heading), "%03u°",
-                  static_cast<unsigned>(state->heading_deg));
-    lv_label_set_text(ui.compass_heading, heading);
-    lv_label_set_text(ui.compass_cardinal, cardinal_name(state->heading_deg));
-    char speed[20];
-    std::snprintf(speed, sizeof(speed), "%u km/h",
-                  static_cast<unsigned>(state->speed_kph));
-    lv_label_set_text(ui.compass_speed, speed);
+    const bool has_usable_fix = state->gps_accuracy_m > 0;
+    const unsigned heading_deg = has_usable_fix ? state->heading_deg : 0;
+    if(has_usable_fix) {
+        char heading[12];
+        std::snprintf(heading, sizeof(heading), "%03u°", heading_deg);
+        lv_label_set_text(ui.compass_heading, heading);
+        lv_label_set_text(ui.compass_cardinal, cardinal_name(heading_deg));
+        char speed[20];
+        std::snprintf(speed, sizeof(speed), "%u km/h",
+                      static_cast<unsigned>(state->speed_kph));
+        lv_label_set_text(ui.compass_speed, speed);
+    } else {
+        lv_label_set_text(ui.compass_heading, "--");
+        lv_label_set_text(ui.compass_cardinal, "WAITING");
+        lv_label_set_text(ui.compass_speed, "-- km/h");
+    }
 
-    const double heading_rad = state->heading_deg * kPi / 180.0;
+    const double heading_rad = heading_deg * kPi / 180.0;
     for(int i = 0; i < kCompassTickCount; ++i) {
         const double angle = i * 15.0 * kPi / 180.0 - heading_rad;
         const double inner = px(i % 3 == 0 ? 138.0 : 145.0);
@@ -1497,12 +1513,8 @@ void update_music_view() {
 void music_button_event(lv_event_t *event) {
     const auto command = static_cast<moto_music_command_t>(
         reinterpret_cast<std::intptr_t>(lv_event_get_user_data(event)));
-    if(command == MOTO_MUSIC_TOGGLE_PLAYBACK) {
-        ui.music.playing = ui.music.playing == 0;
-    } else if(command == MOTO_MUSIC_LIKE && ui.music.like_available) {
-        ui.music.liked = 1;
-    }
-    update_music_view();
+    // The phone may reject or delay a command. Wait for the next real
+    // MediaState instead of showing an optimistic playback or like state.
     if(ui.music_callback != nullptr) ui.music_callback(command, ui.music_callback_context);
 }
 
@@ -1718,7 +1730,7 @@ void create_speed_page() {
         lv_obj_set_style_line_width(ui.speed_ticks[i], px(i % 2 == 0 ? 3 : 2), 0);
         lv_obj_set_style_line_color(ui.speed_ticks[i], kGraphite, 0);
     }
-    ui.speed_value = make_label(page, &lv_font_montserrat_48, kWhite, "72");
+    ui.speed_value = make_label(page, &lv_font_montserrat_48, kWhite, "--");
     lv_obj_align(ui.speed_value, LV_ALIGN_CENTER, 0, px(-10));
     lv_obj_t *unit = make_label(page, &lv_font_montserrat_20, kQuiet, "km/h");
     lv_obj_set_style_text_letter_space(unit, px(2), 0);
@@ -1750,18 +1762,18 @@ void create_compass_page() {
     lv_obj_set_style_bg_opa(index, LV_OPA_COVER, 0);
     lv_obj_set_style_transform_rotation(index, 450, 0);
 
-    ui.compass_heading = make_label(page, &lv_font_montserrat_48, kAmber, "359°");
+    ui.compass_heading = make_label(page, &lv_font_montserrat_48, kAmber, "--");
     lv_obj_align(ui.compass_heading, LV_ALIGN_CENTER, 0, px(-37));
-    ui.compass_cardinal = make_label(page, &lv_font_montserrat_20, kAmber, "N");
+    ui.compass_cardinal = make_label(page, &lv_font_montserrat_20, kAmber, "WAITING");
     lv_obj_align(ui.compass_cardinal, LV_ALIGN_CENTER, 0, px(10));
-    ui.compass_speed = make_label(page, &lv_font_montserrat_20, kWhite, "72 km/h");
+    ui.compass_speed = make_label(page, &lv_font_montserrat_20, kWhite, "-- km/h");
     lv_obj_set_style_text_letter_space(ui.compass_speed, px(1), 0);
     lv_obj_align(ui.compass_speed, LV_ALIGN_CENTER, 0, px(57));
 }
 
 void create_music_page() {
     lv_obj_t *page = ui.pages[MOTO_UI_PAGE_MUSIC];
-    ui.music_source = make_label(page, &lv_font_montserrat_16, kQuiet, "APPLE MUSIC");
+    ui.music_source = make_label(page, &lv_font_montserrat_16, kQuiet, "WAITING FOR MEDIA");
     lv_obj_set_style_text_letter_space(ui.music_source, px(2), 0);
     lv_obj_align(ui.music_source, LV_ALIGN_TOP_MID, 0, px(37));
 
@@ -1772,7 +1784,7 @@ void create_music_page() {
     lv_obj_set_style_bg_color(ui.music_disc, kGraphite, 0);
     lv_obj_set_style_bg_opa(ui.music_disc, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(ui.music_disc, px(5), 0);
-    lv_obj_set_style_border_color(ui.music_disc, kIce, 0);
+    lv_obj_set_style_border_color(ui.music_disc, kGraphite, 0);
     lv_obj_set_style_pad_all(ui.music_disc, 0, 0);
     lv_obj_t *core = lv_obj_create(ui.music_disc);
     lv_obj_set_size(core, px(30), px(30));
@@ -1782,12 +1794,12 @@ void create_music_page() {
     lv_obj_set_style_bg_opa(core, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(core, 0, 0);
 
-    ui.music_title = make_label(page, &lv_font_montserrat_20, kWhite, "NIGHT RIDE");
+    ui.music_title = make_label(page, &lv_font_montserrat_20, kWhite, "--");
     lv_obj_set_width(ui.music_title, px(260));
     lv_obj_set_style_text_align(ui.music_title, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(ui.music_title, LV_LABEL_LONG_DOT);
     lv_obj_align(ui.music_title, LV_ALIGN_TOP_MID, 0, px(190));
-    ui.music_artist = make_label(page, &lv_font_montserrat_16, kQuiet, "PHONE NOW PLAYING");
+    ui.music_artist = make_label(page, &lv_font_montserrat_16, kQuiet, "--");
     lv_obj_set_width(ui.music_artist, px(260));
     lv_obj_set_style_text_align(ui.music_artist, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(ui.music_artist, LV_LABEL_LONG_DOT);
@@ -1985,11 +1997,6 @@ extern "C" void moto_nav_ui_create(void) {
     // touch reliably wakes the dots, including the map and music controls.
     install_interaction_wake(ui.screen);
 
-    moto_music_state_t initial_music = {
-        "APPLE MUSIC", "NIGHT RIDE", "PHONE NOW PLAYING", 1, 1, 0, 0,
-    };
-    moto_nav_ui_set_music_state(&initial_music);
-
     moto_ui_state_t initial{};
     initial.mode = MOTO_UI_ACQUIRING_FIX;
     initial.page = MOTO_UI_PAGE_NAVIGATION;
@@ -2002,9 +2009,18 @@ extern "C" void moto_nav_ui_create(void) {
 extern "C" void moto_nav_ui_set_state(const moto_ui_state_t *state) {
     if(state == nullptr || ui.screen == nullptr) return;
     show_page(state->page);
-    // Hidden pages do not need to be invalidated. Page changes immediately
-    // apply a fresh snapshot through PhoneNavBridge, so this keeps every page
-    // correct while avoiding three full page redraws per navigation update.
+    // NavPresenter maps an unusable fix to zero accuracy. Clear the hidden
+    // instrument pages too, so a previous real sample cannot survive a later
+    // loss of positioning and appear current when the rider switches pages.
+    if(state->gps_accuracy_m == 0 &&
+       ui.page != MOTO_UI_PAGE_SPEED && ui.page != MOTO_UI_PAGE_COMPASS) {
+        update_speedometer(state);
+        update_compass(state);
+    }
+    // For normal navigation snapshots, hidden pages do not need to be
+    // invalidated. Page changes immediately apply a fresh snapshot through
+    // PhoneNavBridge, so this keeps every page correct while avoiding three
+    // full page redraws per navigation update.
     switch(ui.page) {
         case MOTO_UI_PAGE_NAVIGATION: update_navigation(state); break;
         case MOTO_UI_PAGE_SPEED: update_speedometer(state); break;
