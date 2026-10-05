@@ -5,20 +5,7 @@ import { createAmapProvider } from "../src/amap-provider.js";
 import { createAmapPlacesProvider } from "../src/amap-places.js";
 import { createAmapCitiesProvider } from "../src/amap-cities.js";
 import { transformAmapRouteV2, transformAmapRouteOptionsV2 } from "../src/amap-transformer.js";
-import { createMapTileProvider } from "../src/map-tiles.js";
 import fixture from "../fixtures/amap-route-v2.json";
-import { createR2Storage } from "./r2-storage.js";
-
-// Workers only supports follow/manual. Preserve the Node provider's refusal to
-// follow redirects by inspecting the response instead of using redirect:"error".
-async function mapFetch(input, options) {
-  const response = await fetch(input, { ...options, redirect: "manual" });
-  if (response.status >= 300 && response.status < 400) {
-    await response.body?.cancel();
-    throw new Error("map source redirects are not allowed");
-  }
-  return response;
-}
 
 const requests = new AsyncLocalStorage();
 let app;
@@ -59,26 +46,12 @@ function createApp(env) {
   } else {
     throw new Error("unsupported MOTO_PROVIDER");
   }
-  // Fixture and disabled modes must stay offline even with the production 'auto' variable.
-  const mapUrl = mode === "amap" ? (env.MOTO_MAP_PMTILES_URL ?? "auto") : "disabled";
-  if (mapUrl !== "disabled") createR2Storage(env.MAP_CACHE); // Validate the binding without I/O.
-  function maps(ctx) {
-    return createMapTileProvider({ url: mapUrl, scheduleRefresh: false, fetchImpl: mapFetch,
-      storage: mapUrl === "disabled" ? undefined : createR2Storage(env.MAP_CACHE),
-      backgroundTask: (task) => ctx.waitUntil(task),
-    });
-  }
-  const mapProvider = mapUrl === "disabled" ? null : {
-    async getTile(z, x, y) {
-      // Never share in-flight R2/PMTiles I/O between Worker requests.
-      const current = maps(requests.getStore());
-      return current.getTile(z, x, y);
-    },
-    status: () => ({ enabled: true, mode: mapUrl === "auto" ? "auto" : "fixed", storage: "r2" }),
-  };
-  const server = createGateway({ provider, mapProvider, allowedOrigin: origin, providerMode: mode });
+  // Free Navigation Mode deliberately has no PMTiles source or R2 binding.
+  // Map requests remain part of the shared API so clients receive an explicit
+  // MAP_DISABLED response instead of a missing-binding exception.
+  const server = createGateway({ provider, mapProvider: null, allowedOrigin: origin, providerMode: mode });
   server.listen(8787); // Workers uses this as an internal routing key, not a TCP listener.
-  return { basePath, origin, maps };
+  return { basePath, origin };
 }
 
 function limiterFor(path, method, env) {
@@ -116,10 +89,5 @@ export default {
       // No raw errors: an upstream URL or binding error could contain deployment secrets.
       return jsonError("SERVER_MISCONFIGURED", "Worker gateway is unavailable; check configuration", 503, env.WEB_ORIGIN);
     }
-  },
-  async scheduled(_event, env, ctx) {
-    app ??= createApp(env);
-    const provider = app.maps(ctx);
-    if (provider) await provider.initialize();
   },
 };

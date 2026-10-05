@@ -2,7 +2,7 @@
 >
 > The Chinese version is authoritative if the two versions differ.
 
-# Deploy with Cloudflare Workers + R2
+# Deploy the Cloudflare Workers Free Navigation Mode
 
 This is an additional deployment option requested in
 [issue #2](https://github.com/mx3353672833-debug/moto-gps-waveshare/issues/2).
@@ -11,14 +11,13 @@ Both deployments reuse the search, routing, city, map conversion and protocol va
 iOS and ESP32 keep the same protocol.
 
 ```text
-iPhone → your Worker HTTPS endpoint → AMap (places / routes / city boundaries)
-                                   → Protomaps PMTiles (roads / buildings on demand)
-                                   ↔ private R2 (converted map tiles / source metadata)
+iPhone → your Worker HTTPS endpoint → AMap (places / routes / alternatives / rerouting / cities)
+                                   ✕ surrounding map tiles (explicitly disabled)
 ```
 
-R2 stores map cache data, not AMap keys, user searches or route responses. This does not add OTA firmware hosting.
-Configure the AMap key as a Worker Secret. You need your own Cloudflare account and AMap permissions;
-the repository does not provide a public navigation service. The existing OSM/ODbL attribution is preserved.
+This mode does not create, bind or use Cloudflare R2, so it does not require a payment method for map caching.
+Configure the AMap key only as a Worker Secret. You need your own Cloudflare account and AMap permissions;
+the repository does not provide a public navigation service. iPhone, ESP32 and their BLE/navigation protocol stay unchanged.
 
 ## 1. Test locally
 
@@ -31,9 +30,9 @@ npm test --prefix backend
 npm test --prefix backend/cloudflare
 ```
 
-The Workers checks run inside Miniflare / workerd using local R2 and controlled upstream responses.
+The Workers checks run inside Miniflare / workerd with no R2 binding and controlled upstream responses.
 No account or real key is needed. They cover routes and alternatives, places, cities, input validation,
-rate limiting, compressed PMTiles decoding, R2 persistence, upstream failures and scheduled refresh.
+rate limiting and the explicit map-disabled response.
 Passing these checks does not verify mainland China connectivity or a real AMap account.
 
 Enter this directory and copy `.dev.vars.example` to `.dev.vars`:
@@ -49,33 +48,27 @@ Open `http://localhost:8787/healthz`. The example uses **fixture mode**: synthet
 results and `ready_for_live_navigation=false`, without contacting AMap or online maps.
 `.dev.vars` is local only; it does not configure the deployed Worker.
 
-## 2. Create R2 and configure the Worker
+## 2. Configure the Worker without R2
 
 Run the following commands from `backend/cloudflare`:
 
 ```sh
 npx wrangler login
-npx wrangler r2 bucket create moto-gps-map-cache
 ```
 
-If you already use that bucket name, choose another and update `bucket_name` in `wrangler.jsonc`.
-Keep the bucket private; no public bucket domain is required. Add an object lifecycle rule to delete
-objects **under `tiles/` only after 30 days**, using R2 bucket Settings → Object lifecycle rules.
-Missing tiles can be fetched again. Do not apply that rule to `metadata/`, which retains the last known map source.
-R2 does not use the Node deployment's 1 GiB disk LRU: visited map area and lifecycle rules determine storage usage.
-
-Edit `vars` in `wrangler.jsonc`:
+`wrangler.jsonc` already sets `MOTO_PROVIDER=amap` and `MOTO_MAP_PMTILES_URL=disabled`,
+and contains no `r2_buckets` configuration:
 
 | Setting | Purpose |
 | --- | --- |
-| `MOTO_PROVIDER` | Set to `amap` for live navigation; default `disabled`; `fixture` is for demos/tests only |
-| `MOTO_MAP_PMTILES_URL` | `auto` selects a completed Protomaps build; alternatively a trusted HTTPS `.pmtiles` URL or `disabled` |
+| `MOTO_PROVIDER` | `amap`, enabling real AMap places, routes, alternatives, rerouting and city queries |
+| `MOTO_MAP_PMTILES_URL` | `disabled`, turning surrounding map tiles off |
 | `WEB_ORIGIN` | Allowed website origin, e.g. `https://nav.example.com`; use an empty string for native-app-only use |
 | `MOTO_BASE_PATH` | Empty by default, exposing `/v1/...`; `/moto-gps/api` exposes `/moto-gps/api/v1/...`; no trailing slash |
 
-`disabled` and `fixture` modes always disable online maps to keep tests offline.
-Maps require the `MAP_CACHE` binding. Hosting private PMTiles archives is not included in this version;
-a custom source must support HTTPS Range requests.
+The map endpoint remains for protocol compatibility. It returns `503` with `MAP_DISABLED` when called;
+it does not contact a map source and never fails because an R2 binding is missing. `/healthz` reports
+`ready_for_live_navigation=true`, `capabilities.real_navigation=true`, and `capabilities.surrounding_map=false`.
 
 Set your AMap **Web Service key**:
 
@@ -127,31 +120,26 @@ curl --fail-with-body 'https://YOUR-WORKER/v1/places?keywords=%E6%B5%8E%E5%8D%97
 curl --fail-with-body 'https://YOUR-WORKER/v1/map/cities?keywords=%E6%B5%8E%E5%8D%97'
 curl --fail-with-body -H 'Content-Type: application/json' --data-binary @../fixtures/route-request-v1.json https://YOUR-WORKER/v1/routes
 curl --fail-with-body -H 'Content-Type: application/json' --data-binary @../fixtures/route-request-v1.json https://YOUR-WORKER/v1/route-options
-curl --fail-with-body https://YOUR-WORKER/v1/map/tiles/15/27044/12791
+curl -i https://YOUR-WORKER/v1/map/tiles/15/27044/12791
 ```
 
-Check `provider=amap`, successful real searches/routes, roads and buildings in an uncached tile,
-and a corresponding JSON object under R2 `tiles/`. A second tile request should use the cache.
+Check `provider=amap` and successful real searches, routes and alternatives. A tile request should return
+`error.code=MAP_DISABLED`, not fixture roads or an R2 binding error.
 `/healthz` reports configured capabilities; it does not contact AMap or the map source and does not
 prove upstream availability. Speed limits and traffic-light countdown remain unsupported.
 
-On a phone using cellular data in the intended region, test place searches, route planning, rerouting
-and map downloads. Record latency and timeouts. The Issue's reported OTA throughput does not verify
+On a phone using cellular data in the intended region, test place searches, route planning, alternatives,
+rerouting and the iPhone → BLE → ESP32 navigation path. Record latency and timeouts. The Issue's reported OTA throughput does not verify
 these operations. This implementation does not add IP selection or promise network speeds.
 Large tile decoding can reach Workers CPU, memory or subrequest limits; confirm plan quotas and costs
 against the actual workload.
 
 ## Runtime behavior and limitations
 
-- Existing routes and JSON contracts are preserved through Cloudflare's official Node HTTP adapter.
-- PMTiles byte ranges are fetched on demand. The global map archive is not copied into R2.
-- Each request owns its PMTiles I/O, avoiding shared pending operations between Worker requests.
-  R2 tile cache and source metadata persist across requests.
-- Automatic map metadata refreshes daily. Cached tiles return first, with stale data refreshed using
-  `waitUntil`. Cron runs at 03:17 UTC. A source outage with no cached tile returns 503, never invented roads;
-  existing cached tiles remain usable.
-- R2 errors do not expose secrets. If a cache write fails, the retrieved real tile may still be returned,
-  but a later request may have to fetch it again.
+- Existing routes, searches, cities and error JSON contracts are preserved through Cloudflare's official Node HTTP adapter.
+- `surrounding_map` is unavailable in this mode: the Worker does not read PMTiles, create R2, cache tiles or invent roads.
+- iOS route planning, alternatives, live route requests, rerouting and BLE navigation messages do not depend on surrounding maps.
+- Existing bundled/local iOS maps remain usable; this Worker does not provide new tile downloads.
 - Cloudflare per-IP limits are 30 route, 60 place, 30 city and 600 tile requests per minute.
   These are edge limits, not strict account-wide quotas. Use different `namespace_id` values for separate
   gateways to avoid shared quotas. Users behind one public IP share its allowance. CORS and rate limiting
@@ -160,5 +148,4 @@ against the actual workload.
   instructions for an optional deployment.
 
 References: [Workers Node HTTP](https://developers.cloudflare.com/workers/runtime-apis/nodejs/http/),
-[R2 Workers API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/),
 [Workers rate limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).

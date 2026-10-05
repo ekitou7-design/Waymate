@@ -180,10 +180,15 @@ export function createGateway({
             // live signal phases. API readiness must not imply those feeds.
             road_speed_limits: false,
             traffic_light_countdown: false,
+            real_navigation: providerMode === "amap",
             surrounding_map: typeof mapProvider?.getTile === "function",
             map_city_search: typeof provider.searchCities === "function",
           },
-          map_source: mapProvider?.status?.() ?? { enabled: false },
+          map_source: mapProvider?.status?.() ?? {
+            enabled: false,
+            mode: "disabled",
+            reason: "surrounding map is disabled",
+          },
         },
         allowedOrigin,
       );
@@ -207,7 +212,9 @@ export function createGateway({
           if (!match || requestUrl.search) throw new BodyReadError("INVALID_REQUEST", "invalid map tile path or query");
           const [z, x, y] = match.slice(1).map(Number);
           validateTileCoordinates(z, x, y);
-          if (!mapProvider) throw new BodyReadError("MAP_DISABLED", "surrounding map source is disabled");
+          if (!mapProvider) {
+            throw new BodyReadError("MAP_DISABLED", "surrounding map is disabled in Free Navigation Mode");
+          }
           result = await mapProvider.getTile(z, x, y);
         } else {
           if ([...requestUrl.searchParams.keys()].some((key) => key !== "keywords") ||
