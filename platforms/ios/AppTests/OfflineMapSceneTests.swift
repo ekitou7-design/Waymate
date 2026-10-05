@@ -1,7 +1,7 @@
 import Foundation
 import SQLite3
 import XCTest
-@testable import MOTO_GPS
+@testable import Waymate
 
 @MainActor
 final class OfflineMapSceneTests: XCTestCase {
@@ -161,14 +161,14 @@ final class OfflineMapSceneTests: XCTestCase {
             roadClass: "primary",
             points: [point(origin, northM: 300, eastM: 0), point(origin, northM: 320, eastM: 0)]
         ))
-        var buildings = (0 ..< 16).map { index in
-            OfflineMapBuilding(
+        var buildings: [OfflineMapBuilding] = (0 ..< 16).map { index in
+            let offset = Double(index * 2)
+            let points = smallBuilding.map { point($0, northM: offset, eastM: offset) }
+            return OfflineMapBuilding(
                 osmWayID: Int64(index),
                 name: nil,
                 buildingClass: "generic",
-                points: smallBuilding.map {
-                    point($0, northM: Double(index * 2), eastM: Double(index * 2))
-                }
+                points: points
             )
         }
         buildings.append(OfflineMapBuilding(

@@ -21,6 +21,7 @@ platforms/ios/.build/
 platforms/ios/.swiftpm/
 platforms/ios/DerivedData/
 platforms/ios/MotoGPS.xcodeproj/
+platforms/ios/Waymate.xcodeproj/
 **/xcuserdata/
 *.xcuserstate
 platforms/web/shell/runtime/

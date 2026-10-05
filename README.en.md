@@ -423,10 +423,10 @@ The configuration source is `project.yml`, and XcodeGen updates the project and 
 
 ```sh
 (cd platforms/ios && xcodegen generate)
-open platforms/ios/MotoGPS.xcodeproj
+open platforms/ios/Waymate.xcodeproj
 ```
 
-Connect and trust your iPhone, enable developer mode when Xcode prompts, select the MotoGPS scheme,
+Connect and trust your iPhone, enable developer mode when Xcode prompts, select the Waymate scheme,
 your own device and signing team, then click Run to install.
 On first run, allow location, precise location, Bluetooth and the required media permissions when
 prompted. Detailed steps and signing notes are in the [iOS documentation](platforms/ios/README.en.md).

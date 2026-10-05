@@ -38,7 +38,8 @@ final class AppModel: ObservableObject {
     private var routePreviewRequestID: UInt32 = 1
     private var routePreviewGeneration: UInt64 = 0
 
-    private static let recentPlacesKey = "MotoGPS.RecentPlaces.v1"
+    private static let recentPlacesKey = "Waymate.RecentPlaces.v1"
+    private static let legacyRecentPlacesKey = "MotoGPS.RecentPlaces.v1"
 
     init(gatewayBaseURL: URL = AppConfiguration.gatewayBaseURL) {
         liveRouteProvider = AmapGatewayRouteProvider(baseURL: gatewayBaseURL)
@@ -291,6 +292,7 @@ final class AppModel: ObservableObject {
     func clearRecentPlaces() {
         recentPlaces = []
         UserDefaults.standard.removeObject(forKey: Self.recentPlacesKey)
+        UserDefaults.standard.removeObject(forKey: Self.legacyRecentPlacesKey)
     }
 
     func toggleNavigation() {
@@ -602,9 +604,9 @@ final class AppModel: ObservableObject {
     }
 
     private static func loadRecentPlaces() -> [PlaceSearchResult] {
-        guard let data = UserDefaults.standard.data(forKey: recentPlacesKey),
-              let places = try? JSONDecoder().decode([PlaceSearchResult].self, from: data)
-        else { return [] }
+        guard let places = WaymateDefaults.value(forKey: recentPlacesKey, legacyKey: legacyRecentPlacesKey, decode: {
+            ($0 as? Data).flatMap { try? JSONDecoder().decode([PlaceSearchResult].self, from: $0) }
+        }) else { return [] }
         return Array(deduplicated(places).prefix(8))
     }
 

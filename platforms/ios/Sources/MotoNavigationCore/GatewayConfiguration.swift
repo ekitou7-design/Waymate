@@ -15,7 +15,8 @@ public enum GatewayAddressError: LocalizedError {
 }
 
 public enum GatewayConfiguration {
-    public static let defaultsKey = "MotoGPS.GatewayBaseURL.v1"
+    public static let defaultsKey = "Waymate.GatewayBaseURL.v1"
+    public static let legacyDefaultsKey = "MotoGPS.GatewayBaseURL.v1"
 
     public static func normalizedURL(_ input: String) throws -> URL {
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -41,7 +42,9 @@ public enum GatewayConfiguration {
     }
 
     public static func resolvedURL(defaults: UserDefaults = .standard, bundledAddress: String?) -> URL? {
-        if let saved = defaults.string(forKey: defaultsKey), let url = try? normalizedURL(saved) {
+        if let url = WaymateDefaults.value(forKey: defaultsKey, legacyKey: legacyDefaultsKey, defaults: defaults, decode: {
+            ($0 as? String).flatMap { try? normalizedURL($0) }
+        }) {
             return url
         }
         return bundledAddress.flatMap { try? normalizedURL($0) }

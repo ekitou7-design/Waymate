@@ -242,9 +242,9 @@ and change them to your own unique values, for example:
 
 | Target | Example Bundle Identifier (replace yourname with your own identifier) |
 | --- | --- |
-| MotoGPS | `com.yourname.motogps` |
-| MotoGPSUITests | `com.yourname.motogps.uitests` |
-| MotoGPSUnitTests | `com.yourname.motogps.unittests` |
+| Waymate | `com.yourname.waymate` |
+| WaymateUITests | `com.yourname.waymate.uitests` |
+| WaymateUnitTests | `com.yourname.waymate.unittests` |
 
 If you already have a gateway, change `MOTOGPSGatewayBaseURL` to your own HTTPS address, keeping the
 trailing `/`. If you are only doing the desktop demo you can keep
@@ -260,16 +260,16 @@ project. Do not change only `App/Info.plist`: the next XcodeGen run overwrites i
 ```sh
 cd ~/Projects/moto-gps-waveshare
 (cd platforms/ios && xcodegen generate)
-open platforms/ios/MotoGPS.xcodeproj
+open platforms/ios/Waymate.xcodeproj
 ```
 
 Then do the following in Xcode / on the iPhone, in order:
 
 1. Connect the iPhone with the data cable, unlock the phone and tap "Trust This Computer".
-2. In Xcode select the project on the left, then the `MotoGPS` target → Signing & Capabilities.
+2. In Xcode select the project on the left, then the `Waymate` target → Signing & Capabilities.
 3. Tick Automatically manage signing and choose your own account / Personal Team for Team. Wait for
    the signing errors to disappear.
-4. Choose the `MotoGPS` scheme at the top, and select your own iPhone as the run device; you must not
+4. Choose the `Waymate` scheme at the top, and select your own iPhone as the run device; you must not
    choose a simulator or a build-only device option.
 5. Following Xcode's prompt, turn on "Settings → Privacy & Security → Developer Mode" on the iPhone
    and restart to confirm. If that entry point is missing, let Xcode finish pairing the device and
@@ -370,7 +370,7 @@ The test firmware does not necessarily restore all the personalised configuratio
 | The capacity shows 16 MB or another value | It does not match this project's 32 MB configuration; stop applying the flashing steps and contact the seller to confirm the model / revision |
 | No serial port appears, or it stays at Connecting | The cable, the port being occupied, BOOT download mode; list the serial ports again |
 | Flashing succeeds but the screen stays black | Whether it is still in download mode, whether it is exactly the 1.75C board; look at the serial output for initialisation errors |
-| `Signing requires a development team` | The MotoGPS target's Team, automatic signing and the Apple account sign-in |
+| `Signing requires a development team` | The Waymate target's Team, automatic signing and the Apple account sign-in |
 | The Bundle ID is unavailable | Use your own unique identifier and check the three targets; regenerate after changing the YAML |
 | The iPhone is not among the run devices | Unlock the phone and trust the computer, and check whether Xcode supports the current iOS |
 | The App will not open after a few days | The personal signing profile may have expired; connect Xcode and Run again with the original configuration |

@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct MotoGPSApp: App {
+struct WaymateApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {

@@ -1,17 +1,17 @@
 {
   "images" : [
     {
-      "filename" : "MotoGPS-LaunchLogo.png",
+      "filename" : "Waymate-LaunchLogo.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "MotoGPS-LaunchLogo@2x.png",
+      "filename" : "Waymate-LaunchLogo@2x.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "MotoGPS-LaunchLogo@3x.png",
+      "filename" : "Waymate-LaunchLogo@3x.png",
       "idiom" : "universal",
       "scale" : "3x"
     }

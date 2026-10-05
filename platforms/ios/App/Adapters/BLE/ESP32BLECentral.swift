@@ -194,8 +194,10 @@ final class ESP32BLECentral: NSObject {
         #endif
     }
 
+    // Keep the OS restoration identity stable across the product rename.
     private static let restorationID = "org.example.motogps.central"
-    private static let knownPeripheralKey = "MotoGPS.KnownPeripheralIdentifier"
+    private static let knownPeripheralKey = "Waymate.KnownPeripheralIdentifier"
+    private static let legacyKnownPeripheralKey = "MotoGPS.KnownPeripheralIdentifier"
     /// Keep the radio feed at the frozen v1 protocol ceiling of 5 Hz. The
     /// terminal interpolates heading/position locally at 40 Hz, so animation
     /// remains smooth without forcing a full LVGL redraw ten times per second.
@@ -352,8 +354,9 @@ final class ESP32BLECentral: NSObject {
             startScan()
             return
         }
-        if let rawIdentifier = UserDefaults.standard.string(forKey: Self.knownPeripheralKey),
-           let identifier = UUID(uuidString: rawIdentifier),
+        if let identifier = WaymateDefaults.value(forKey: Self.knownPeripheralKey, legacyKey: Self.legacyKnownPeripheralKey, decode: {
+            ($0 as? String).flatMap(UUID.init(uuidString:))
+        }),
            let known = central.retrievePeripherals(withIdentifiers: [identifier]).first
         {
             attachAndConnect(known)
@@ -398,6 +401,7 @@ final class ESP32BLECentral: NSObject {
             // A stale retrievePeripherals result can otherwise remain pending
             // indefinitely and prevent discovery of a replacement device.
             UserDefaults.standard.removeObject(forKey: Self.knownPeripheralKey)
+            UserDefaults.standard.removeObject(forKey: Self.legacyKnownPeripheralKey)
             self.recoverFromTransportError("连接设备超时，正在重新扫描")
         }
     }

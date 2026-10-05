@@ -41,10 +41,10 @@ jobs:
           PY
       - name: App unit tests and offline gateway UI tests
         run: |
-          xcodebuild test -project platforms/ios/MotoGPS.xcodeproj -scheme MotoGPS \
+          xcodebuild test -project platforms/ios/Waymate.xcodeproj -scheme Waymate \
             -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' \
             -derivedDataPath build/ios-tests -resultBundlePath build/GatewayTests.xcresult \
-            -only-testing:MotoGPSUnitTests -only-testing:MotoGPSUITests/GatewaySettingsUITests \
+            -only-testing:WaymateUnitTests -only-testing:WaymateUITests/GatewaySettingsUITests \
             CODE_SIGNING_ALLOWED=NO
       - name: Build unsigned IPA for re-signing
         run: scripts/ios/build_sideload_ipa.sh
@@ -57,7 +57,7 @@ jobs:
       - name: Upload IPA and checksum
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: MOTO-GPS-unsigned-IPA
+          name: Waymate-unsigned-IPA
           path: |
             build/sideload/*.ipa
             build/sideload/SHA256SUMS.txt

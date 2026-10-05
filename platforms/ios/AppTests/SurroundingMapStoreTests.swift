@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import MOTO_GPS
+@testable import Waymate
 
 private actor MapTileTestLoader {
     private(set) var calls = 0

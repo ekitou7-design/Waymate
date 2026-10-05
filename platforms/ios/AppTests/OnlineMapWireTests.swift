@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import MOTO_GPS
+@testable import Waymate
 
 @MainActor
 final class OnlineMapWireTests: XCTestCase {

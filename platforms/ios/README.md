@@ -39,7 +39,7 @@ Release 归档、单测通过不等于公开发布或完成实车验收。自研
 
 ```sh
 xcodegen generate
-open MotoGPS.xcodeproj
+open Waymate.xcodeproj
 ```
 
 `project.yml` 是配置来源，生成时会更新 `App/Info.plist`；只改 plist 后重新生成会被覆盖。
@@ -47,7 +47,7 @@ open MotoGPS.xcodeproj
 
 ## 安装自己的手机
 
-用数据线连接并信任 iPhone，按 Xcode 提示启用开发者模式，选择 MotoGPS scheme 和
+用数据线连接并信任 iPhone，按 Xcode 提示启用开发者模式，选择 Waymate scheme 和
 自己的设备，检查签名后点击 Run。个人免费签名的能力和有效期受 Apple 规则限制，
 到期需重签；本项目不会绕过签名，也不承诺所有后台能力在所有账号下均可用。
 
@@ -96,7 +96,7 @@ swift test --package-path platforms/ios
 在本目录，生成工程后可以进行不签名、不安装的模拟器构建：
 
 ```sh
-xcodebuild -project MotoGPS.xcodeproj -scheme MotoGPS \
+xcodebuild -project Waymate.xcodeproj -scheme Waymate \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO build
 ```

@@ -348,10 +348,10 @@ App 默认网关为示例地址 `https://example.invalid/moto-gps/api/`，使用
 
 ```sh
 (cd platforms/ios && xcodegen generate)
-open platforms/ios/MotoGPS.xcodeproj
+open platforms/ios/Waymate.xcodeproj
 ```
 
-连接并信任自己的 iPhone，按 Xcode 提示启用开发者模式，选择 MotoGPS scheme、
+连接并信任自己的 iPhone，按 Xcode 提示启用开发者模式，选择 Waymate scheme、
 自己的设备和签名团队，再点击 Run 安装。
 首次运行按提示允许定位、精确位置、蓝牙及所需媒体权限。
 详细步骤和签名说明见[iOS 文档](platforms/ios/README.md)。

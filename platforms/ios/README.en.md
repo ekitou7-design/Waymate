@@ -54,7 +54,7 @@ while work focuses on the Waveshare edition.
 
 ```sh
 xcodegen generate
-open MotoGPS.xcodeproj
+open Waymate.xcodeproj
 ```
 
 `project.yml` is the configuration source, and generating updates `App/Info.plist`; if you only change
@@ -65,7 +65,7 @@ to start the Xcode graphical interface.
 ## Install on your own phone
 
 Connect and trust the iPhone with a data cable, enable developer mode when Xcode prompts, select the
-MotoGPS scheme and your own device, check the signing and then click Run. The capabilities and the
+Waymate scheme and your own device, check the signing and then click Run. The capabilities and the
 validity period of a free personal signature are limited by Apple's rules and it must be re-signed
 when it expires; this project does not bypass signing, and does not promise that every background
 capability is available under every account.
@@ -126,7 +126,7 @@ In the current directory, after generating the project you can do a simulator bu
 sign and does not install:
 
 ```sh
-xcodebuild -project MotoGPS.xcodeproj -scheme MotoGPS \
+xcodebuild -project Waymate.xcodeproj -scheme Waymate \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO build
 ```

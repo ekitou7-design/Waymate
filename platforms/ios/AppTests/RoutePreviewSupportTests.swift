@@ -1,7 +1,7 @@
 import Foundation
 import MotoNavigationCore
 import XCTest
-@testable import MOTO_GPS
+@testable import Waymate
 
 final class RoutePreviewSupportTests: XCTestCase {
     func testCandidatePresentsDistanceDurationAndCongestion() {

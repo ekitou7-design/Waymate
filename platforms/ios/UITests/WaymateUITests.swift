@@ -2,7 +2,7 @@ import XCTest
 import UIKit
 import CoreLocation
 
-final class MotoGPSUITests: XCTestCase {
+final class WaymateUITests: XCTestCase {
     private var previousLocation: XCUILocation?
 
     func testLiveShanghaiCitySearchShowsDownloadCoverage() throws {
@@ -22,7 +22,7 @@ final class MotoGPSUITests: XCTestCase {
         city.tap()
         XCTAssertTrue(app.buttons["map-city-start-download"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["map-city-start-download"].isEnabled)
-        keepScreenshot(of: app, named: "MOTO GPS Shanghai offline coverage")
+        keepScreenshot(of: app, named: "Waymate Shanghai offline coverage")
     }
 
     func testMapDownloadsExposeCitySearchAndReturnHome() throws {
@@ -34,7 +34,7 @@ final class MotoGPSUITests: XCTestCase {
         maps.tap()
         XCTAssertTrue(app.descendants(matching: .any)["map-downloads-sheet"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["自动加载周边地图"].exists)
-        keepScreenshot(of: app, named: "MOTO GPS map downloads")
+        keepScreenshot(of: app, named: "Waymate map downloads")
         app.buttons["map-download-city"].tap()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["添加常用城市"].exists)
@@ -81,7 +81,7 @@ final class MotoGPSUITests: XCTestCase {
 
         let sheet = app.descendants(matching: .any)["device-details-sheet"]
         XCTAssertTrue(sheet.waitForExistence(timeout: 3))
-        keepScreenshot(of: app, named: "MOTO GPS device details")
+        keepScreenshot(of: app, named: "Waymate device details")
 
         // Device availability varies on the simulator. Inspecting the sheet
         // must preserve the search independently of its current BLE state.
@@ -102,14 +102,14 @@ final class MotoGPSUITests: XCTestCase {
     func testNativeHomeLightVisualState() throws {
         try captureHomeVisualState(
             appearance: .light,
-            name: "MOTO GPS native home — light"
+            name: "Waymate native home — light"
         )
     }
 
     func testNativeHomeDarkVisualState() throws {
         try captureHomeVisualState(
             appearance: .dark,
-            name: "MOTO GPS native home — dark"
+            name: "Waymate native home — dark"
         )
     }
 
@@ -120,7 +120,7 @@ final class MotoGPSUITests: XCTestCase {
                 "-UIPreferredContentSizeCategoryName",
                 UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue,
             ],
-            name: "MOTO GPS native home — Accessibility XXXL"
+            name: "Waymate native home — Accessibility XXXL"
         )
     }
 
@@ -182,7 +182,7 @@ final class MotoGPSUITests: XCTestCase {
         let end = app.buttons["结束导航"]
         XCTAssertTrue(end.waitForExistence(timeout: 5))
         XCTAssertTrue(end.isEnabled)
-        keepScreenshot(of: app, named: "MOTO GPS native navigation — selected destination")
+        keepScreenshot(of: app, named: "Waymate native navigation — selected destination")
         end.tap()
 
         XCTAssertTrue(search.waitForExistence(timeout: 5))
@@ -259,7 +259,7 @@ final class MotoGPSUITests: XCTestCase {
         let end = app.buttons["结束导航"]
         XCTAssertTrue(end.waitForExistence(timeout: 15))
         XCTAssertTrue(end.isEnabled)
-        keepScreenshot(of: app, named: "MOTO GPS native navigation — demo")
+        keepScreenshot(of: app, named: "Waymate native navigation — demo")
     }
 
     func testEndingDemoNavigationReturnsToHome() throws {
@@ -303,16 +303,16 @@ final class MotoGPSUITests: XCTestCase {
         XCTAssertTrue(app.buttons["route-option-0"].waitForExistence(timeout: 3))
         sleep(3) // Let MapKit finish its tile and camera transition.
 
-        keepScreenshot(of: app, named: "MOTO GPS route preview — overview")
+        keepScreenshot(of: app, named: "Waymate route preview — overview")
 
         app.swipeUp()
         sleep(1)
-        keepScreenshot(of: app, named: "MOTO GPS route preview — choices")
+        keepScreenshot(of: app, named: "Waymate route preview — choices")
 
         if app.buttons["route-option-1"].exists {
             app.buttons["route-option-1"].tap()
             sleep(1)
-            keepScreenshot(of: app, named: "MOTO GPS route preview — alternate selected")
+            keepScreenshot(of: app, named: "Waymate route preview — alternate selected")
         }
     }
 

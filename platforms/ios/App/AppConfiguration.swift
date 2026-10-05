@@ -6,6 +6,7 @@ enum AppConfiguration {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--moto-reset-gateway") {
             UserDefaults.standard.removeObject(forKey: GatewayConfiguration.defaultsKey)
+            UserDefaults.standard.removeObject(forKey: GatewayConfiguration.legacyDefaultsKey)
         }
         #endif
         return GatewayConfiguration.resolvedURL(
