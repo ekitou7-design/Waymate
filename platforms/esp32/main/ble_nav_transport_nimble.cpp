@@ -21,8 +21,8 @@
 extern "C" void ble_store_config_init(void);
 
 namespace {
-constexpr char kTag[] = "moto_ble";
-constexpr char kDeviceName[] = "MOTO GPS";
+constexpr char kTag[] = "waymate_ble";
+constexpr char kDeviceName[] = "WAYMATE";
 
 // BLE_UUID128_INIT takes the Bluetooth little-endian byte representation.
 const ble_uuid128_t kServiceUuid = BLE_UUID128_INIT(

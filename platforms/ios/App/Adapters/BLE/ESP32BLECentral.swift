@@ -374,7 +374,7 @@ final class ESP32BLECentral: NSObject {
         connectionTimeoutTask = nil
         self.peripheral = peripheral
         peripheral.delegate = self
-        snapshot.connection = .connecting(name: peripheral.name ?? "MOTO GPS")
+        snapshot.connection = .connecting(name: peripheral.name ?? "WAYMATE")
         if peripheral.state == .connected {
             peripheral.discoverServices([Self.serviceUUID])
         } else {
@@ -569,7 +569,7 @@ final class ESP32BLECentral: NSObject {
                 reconnectAttempt = 0
                 deviceHeartbeatTimeoutMs = handshake.deviceLivenessTimeoutMs
                 snapshot.connection = .connected(
-                    name: peripheral?.name ?? "MOTO GPS"
+                    name: peripheral?.name ?? "WAYMATE"
                 )
                 snapshot.negotiatedProtocol = "V1"
                 lastValidDeviceFrameAtMs = Self.monotonicMs()
@@ -1193,7 +1193,7 @@ extension ESP32BLECentral: @preconcurrency CBCentralManagerDelegate {
         cancelTransportTeardown()
         self.peripheral = peripheral
         peripheral.delegate = self
-        snapshot.connection = .connecting(name: peripheral.name ?? "MOTO GPS")
+        snapshot.connection = .connecting(name: peripheral.name ?? "WAYMATE")
         // Do not start GATT discovery while the restored central is still in
         // `.unknown`; centralManagerDidUpdateState will call
         // connectKnownPeripheralOrScan(), which resumes this peripheral.
@@ -1239,7 +1239,7 @@ extension ESP32BLECentral: @preconcurrency CBCentralManagerDelegate {
         // Physical BLE connection is only the first stage. Keep the UI in
         // Connecting until GATT discovery, subscription and the v1 handshake
         // have all completed in acceptDeviceReady().
-        snapshot.connection = .connecting(name: peripheral.name ?? "MOTO GPS")
+        snapshot.connection = .connecting(name: peripheral.name ?? "WAYMATE")
         beginGattSetup(for: peripheral)
     }
 
@@ -1290,7 +1290,7 @@ extension ESP32BLECentral: @preconcurrency CBPeripheralDelegate {
             return
         }
         guard let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
-            recoverFromTransportError("设备缺少 MOTO GPS 导航服务")
+            recoverFromTransportError("设备缺少 WAYMATE 导航服务")
             return
         }
         trace("navigation service discovered")

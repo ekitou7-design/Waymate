@@ -220,7 +220,7 @@ final class AppModel: ObservableObject {
     }
 
     var activeDestinationName: String {
-        isDemoActive ? "MOTO GPS 演示路线" : (selectedPlace?.name ?? "目的地")
+        isDemoActive ? "WAYMATE 演示路线" : (selectedPlace?.name ?? "目的地")
     }
 
     var searchScopeText: String {

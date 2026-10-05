@@ -1174,7 +1174,7 @@ void set_layer_opacity(void *object, int32_t opacity) {
 
 void apply_lifecycle_content(LifecycleVisual visual) {
     ui.lifecycle_visual = visual;
-    const char *kicker = "MOTO GPS / PHONE LINK";
+    const char *kicker = "WAYMATE / PHONE LINK";
     const char *title = "";
     const char *subtitle = "";
     lv_color_t title_color = kWhite;
@@ -1193,12 +1193,12 @@ void apply_lifecycle_content(LifecycleVisual visual) {
             title_color = kGreen;
             break;
         case LifecycleVisual::Ready:
-            kicker = "MOTO GPS / READY";
+            kicker = "WAYMATE / READY";
             title = "READY TO RIDE";
             subtitle = "请在手机选择目的地";
             break;
         case LifecycleVisual::Planning:
-            kicker = "MOTO GPS / ROUTE";
+            kicker = "WAYMATE / ROUTE";
             title = "BUILDING ROUTE";
             subtitle = "正在规划路线";
             break;
@@ -1657,7 +1657,7 @@ void create_navigation_page() {
 
     ui.nav_lifecycle_kicker = make_label(
         ui.nav_lifecycle, &lv_font_montserrat_16, kQuiet,
-        "MOTO GPS / PHONE LINK");
+        "WAYMATE / PHONE LINK");
     lv_obj_set_style_text_letter_space(ui.nav_lifecycle_kicker, px(2), 0);
     lv_obj_align(ui.nav_lifecycle_kicker, LV_ALIGN_TOP_MID, 0, px(39));
 
@@ -1892,7 +1892,7 @@ extern "C" void moto_nav_ui_show_boot_screen(void) {
     lv_obj_set_style_opa(content, LV_OPA_TRANSP, 0);
 
     lv_obj_t *moto = make_label(content, &lv_font_montserrat_48,
-                                boot_white, "MOTO");
+                                boot_white, "WAY");
     lv_obj_set_style_text_letter_space(moto, px(4), 0);
     lv_obj_set_style_text_outline_stroke_color(moto, boot_white, 0);
     lv_obj_set_style_text_outline_stroke_width(moto, px(2), 0);
@@ -1902,7 +1902,7 @@ extern "C" void moto_nav_ui_show_boot_screen(void) {
     lv_obj_align(moto, LV_ALIGN_CENTER, 0, px(-37));
 
     lv_obj_t *gps = make_label(content, &lv_font_montserrat_48,
-                               boot_white, "GPS");
+                               boot_white, "MATE");
     lv_obj_set_style_text_letter_space(gps, px(10), 0);
     lv_obj_set_style_text_outline_stroke_color(gps, boot_white, 0);
     lv_obj_set_style_text_outline_stroke_width(gps, px(2), 0);
@@ -1960,7 +1960,7 @@ extern "C" void moto_nav_ui_show_power_off_screen(void) {
     lv_obj_set_style_bg_opa(ui.screen, LV_OPA_COVER, 0);
 
     lv_obj_t *brand = make_label(ui.screen, &lv_font_montserrat_48,
-                                 LV_COLOR_MAKE(0xFF, 0xFF, 0xFF), "MOTO");
+                                 LV_COLOR_MAKE(0xFF, 0xFF, 0xFF), "WAYMATE");
     lv_obj_set_style_text_letter_space(brand, px(4), 0);
     lv_obj_set_style_text_outline_stroke_color(
         brand, LV_COLOR_MAKE(0xFF, 0xFF, 0xFF), 0);

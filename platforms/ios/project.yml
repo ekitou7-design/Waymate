@@ -43,7 +43,7 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: MOTO GPS
+        CFBundleDisplayName: WAYMATE
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
@@ -51,10 +51,10 @@ targets:
           UIColorName: LaunchBackground
           UIImageName: LaunchLogo
           UIImageRespectsSafeAreaInsets: true
-        NSLocationWhenInUseUsageDescription: MOTO GPS 需要定位来规划路线并更新骑行位置。
-        NSLocationAlwaysAndWhenInUseUsageDescription: 导航开始后，MOTO GPS 需要在锁屏或切换应用时继续更新骑行位置。
-        NSBluetoothAlwaysUsageDescription: MOTO GPS 使用蓝牙连接车把上的 ESP32-S3 圆屏设备。
-        NSAppleMusicUsageDescription: MOTO GPS 需要读取并控制 Apple Music 播放，以便在车把圆屏上切歌和暂停。
+        NSLocationWhenInUseUsageDescription: WAYMATE 需要定位来规划路线并更新骑行位置。
+        NSLocationAlwaysAndWhenInUseUsageDescription: 导航开始后，WAYMATE 需要在锁屏或切换应用时继续更新骑行位置。
+        NSBluetoothAlwaysUsageDescription: WAYMATE 使用蓝牙连接车把上的 ESP32-S3 圆屏设备。
+        NSAppleMusicUsageDescription: WAYMATE 需要读取并控制 Apple Music 播放，以便在车把圆屏上切歌和暂停。
         UIBackgroundModes:
           - location
           - bluetooth-central

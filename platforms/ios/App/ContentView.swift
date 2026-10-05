@@ -714,7 +714,7 @@ struct ContentView: View {
     private var deviceName: String {
         switch model.device.connection {
         case let .connected(name), let .connecting(name): return name
-        default: return "MOTO GPS"
+        default: return "WAYMATE"
         }
     }
 
@@ -725,7 +725,7 @@ struct ContentView: View {
         case .failed:
             return "暂时无法连接。请确认圆屏已开机并靠近手机，再试一次。"
         case .bluetoothUnavailable:
-            return "请开启手机蓝牙，并允许 MOTO GPS 使用蓝牙。"
+            return "请开启手机蓝牙，并允许 WAYMATE 使用蓝牙。"
         case .scanning, .connecting:
             return "请将已开机的圆屏放在手机附近。"
         case .idle:

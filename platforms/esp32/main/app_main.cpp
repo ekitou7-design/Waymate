@@ -14,7 +14,7 @@
 #include "phone_nav_bridge.h"
 
 namespace {
-constexpr char kTag[] = "moto_gps";
+constexpr char kTag[] = "waymate";
 constexpr std::uint64_t kPowerHoldMs = 3'000;
 
 moto::ble::AckStatus receive_phone_message(
