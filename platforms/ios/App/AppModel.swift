@@ -14,12 +14,56 @@ final class AppModel: ObservableObject {
     var rideSessionState: RideSessionState { rideSession.state }
     var rideActive: Bool { rideSession.isActive }
 
+    @Published private(set) var rideFailure: String?
+    var rideRecord: RideRecord? { rideSession.record }
+    var rideTrack: [RideTrackPoint] { rideSession.track }
+    var rideDistance: Double { rideSession.distance }
+    var rideMovingTime: TimeInterval { rideSession.movingTime }
+    var rideMaxSpeed: Double? { rideSession.maxSpeed }
+    var rideElapsedTime: TimeInterval { rideSession.elapsedTime(at: rideNow()) }
+    var rideCurrentSpeed: Double? { rideSession.currentSpeed(at: rideNow()) }
+
     func startRide() {
-        rideSession.start()
+        guard !rideSession.isActive else { return }
+        guard subscribeRideLocation() else { return }
+        rideSession.start(at: rideNow())
+    }
+
+    /// PRD integration seam. Wire after successful formal navigation startup
+    /// once the product has an explicit Stop Ride entry point.
+    func startRideForNavigation() {
+        guard isNavigationActive, !isDemoActive else { return }
+        startRide()
+    }
+
+    func pauseRide() {
+        guard rideSession.state == .active else { return }
+        rideSession.pause(at: rideNow())
+        liveLocation.stopRide()
+    }
+
+    func resumeRide() {
+        guard rideSession.state == .paused, subscribeRideLocation() else { return }
+        rideSession.resume(at: rideNow())
     }
 
     func stopRide() {
-        rideSession.stop()
+        rideSession.stop(at: rideNow())
+        liveLocation.stopRide()
+    }
+
+    private func subscribeRideLocation() -> Bool {
+        do {
+            try liveLocation.startRide(onFix: { [weak self] fix in
+                guard let self else { return }
+                self.rideSession.accept(fix, receivedAt: self.rideNow())
+            }, onFailure: { [weak self] message in self?.rideFailure = message })
+            rideFailure = nil
+            return true
+        } catch {
+            rideFailure = error.localizedDescription
+            return false
+        }
     }
 
     @Published var destinationQuery = ""
@@ -36,7 +80,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var routePreviewFailure: String?
 
     private let bluetooth = ESP32BLECentral()
-    private let liveLocation = CoreLocationNavigationSource()
+    private let liveLocation: SharedLocationSource
+    private let rideNow: () -> Date
     private let searchLocation = SearchLocationBiasSource()
     private var liveRouteProvider: AmapGatewayRouteProvider
     private var placeProvider: AmapGatewayPlaceProvider
@@ -53,7 +98,11 @@ final class AppModel: ObservableObject {
     private static let recentPlacesKey = "Waymate.RecentPlaces.v1"
     private static let legacyRecentPlacesKey = "MotoGPS.RecentPlaces.v1"
 
-    init(gatewayBaseURL: URL = AppConfiguration.gatewayBaseURL, startsServices: Bool = true) {
+    init(gatewayBaseURL: URL = AppConfiguration.gatewayBaseURL, startsServices: Bool = true,
+         locationSource: (any NavigationLocationSource)? = nil,
+         rideNow: @escaping () -> Date = Date.init) {
+        liveLocation = SharedLocationSource(source: locationSource ?? CoreLocationNavigationSource())
+        self.rideNow = rideNow
         liveRouteProvider = AmapGatewayRouteProvider(baseURL: gatewayBaseURL)
         placeProvider = AmapGatewayPlaceProvider(baseURL: gatewayBaseURL)
         mapGatewayBaseURL = gatewayBaseURL
@@ -347,24 +396,29 @@ final class AppModel: ObservableObject {
 
         routePreviewTask?.cancel()
         routePreviewTask = nil
-        surroundingMap.reset()
-        runtime?.stop()
-        let runtime = SharedNavigationRuntime(
-            locationSource: liveLocation,
+        beginLiveNavigation(
+            destination: selectedPlace.location,
+            destinationPOIID: selectedPlace.id.isEmpty ? nil : selectedPlace.id,
             routeProvider: PreviewSelectedRouteProvider(
                 selectedRoute: selectedRoutePreview.route,
                 selectedRouteOrigin: routePreviewOrigin,
                 liveProvider: liveRouteProvider
             )
         )
+    }
+
+    /// Starts the accepted live navigation request after the UI's preview checks.
+    /// Tests can supply a route provider without permissions or network requests.
+    func beginLiveNavigation(destination: WGS84Point, destinationPOIID: String? = nil,
+                             routeProvider: any NavigationRouteProviding) {
+        surroundingMap.reset()
+        runtime?.stop()
+        let runtime = SharedNavigationRuntime(locationSource: liveLocation, routeProvider: routeProvider)
         bind(runtime)
         self.runtime = runtime
         isDemoActive = false
         navigationFailure = nil
-        let started = runtime.start(
-            destination: selectedPlace.location,
-            destinationPOIID: selectedPlace.id.isEmpty ? nil : selectedPlace.id
-        )
+        let started = runtime.start(destination: destination, destinationPOIID: destinationPOIID)
         isNavigationActive = started
         if !started {
             self.runtime = nil

@@ -45,11 +45,11 @@ final class RideSessionTests: XCTestCase {
         var second = RideSession()
         for start in [false, true, true, false, false, true, false, true] {
             if start {
-                first.start()
-                second.start()
+                first.start(at: Date(timeIntervalSince1970: 100))
+                second.start(at: Date(timeIntervalSince1970: 100))
             } else {
-                first.stop()
-                second.stop()
+                first.stop(at: Date(timeIntervalSince1970: 200))
+                second.stop(at: Date(timeIntervalSince1970: 200))
             }
             XCTAssertEqual(first, second)
             XCTAssertEqual(first.state, start ? .active : .inactive)
@@ -129,7 +129,7 @@ final class RideSessionTests: XCTestCase {
 
     @MainActor
     func testAppModelExposesOnlySessionProjectionsAndExplicitCommands() async {
-        let model = AppModel(startsServices: false)
+        let model = AppModel(startsServices: false, locationSource: RideTestLocationSource())
         XCTAssertEqual(model.rideSessionState, .inactive)
         XCTAssertFalse(model.rideActive)
         model.startRide()
@@ -146,7 +146,7 @@ final class RideSessionTests: XCTestCase {
 
     @MainActor
     func testAppModelNavigationCommandsDoNotControlRide() async {
-        let model = AppModel(startsServices: false)
+        let model = AppModel(startsServices: false, locationSource: RideTestLocationSource())
         // No destination/preview: a rejected start must not create a Ride.
         model.startNavigation()
         XCTAssertFalse(model.isNavigationActive)

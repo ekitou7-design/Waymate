@@ -3,7 +3,14 @@ import MotoNavigationCore
 
 @MainActor
 final class CoreLocationNavigationSource: NSObject, NavigationLocationSource {
-    private static let maximumFixAgeS: TimeInterval = 15
+    /// Shared observation validity; Ride adds recording accuracy/motion rules.
+    nonisolated static func isUsable(_ fix: NavigationFix, at now: Date) -> Bool {
+        CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(
+            latitude: fix.coordinate.latitudeDeg, longitude: fix.coordinate.longitudeDeg))
+            && fix.horizontalAccuracyM.isFinite && fix.horizontalAccuracyM >= 0
+            && fix.timestamp.timeIntervalSince1970.isFinite
+            && (0...15).contains(now.timeIntervalSince(fix.timestamp))
+    }
     private let manager = CLLocationManager()
     private var onFix: (@MainActor (NavigationFix) -> Void)?
     private var onFailure: (@MainActor (String) -> Void)?
@@ -75,29 +82,19 @@ extension CoreLocationNavigationSource: @preconcurrency CLLocationManagerDelegat
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         let now = Date()
-        guard let location = locations
-            .filter({
-                $0.horizontalAccuracy >= 0 &&
-                    $0.coordinate.latitude.isFinite &&
-                    $0.coordinate.longitude.isFinite &&
-                    abs($0.timestamp.timeIntervalSince(now)) <= Self.maximumFixAgeS
-            })
-            .max(by: { $0.timestamp < $1.timestamp })
-        else { return }
-
-        onFix?(
-            NavigationFix(
-                coordinate: WGS84Point(
-                    longitudeDeg: location.coordinate.longitude,
-                    latitudeDeg: location.coordinate.latitude
-                ),
+        // Deliver chronological valid observations, including batched background fixes.
+        for location in locations.sorted(by: { $0.timestamp < $1.timestamp }) {
+            let fix = NavigationFix(
+                coordinate: WGS84Point(longitudeDeg: location.coordinate.longitude,
+                                       latitudeDeg: location.coordinate.latitude),
                 altitudeM: location.verticalAccuracy >= 0 ? location.altitude : nil,
                 horizontalAccuracyM: location.horizontalAccuracy,
-                speedMps: location.speed >= 0 ? location.speed : nil,
-                courseDeg: location.course >= 0 ? location.course : nil,
+                speedMps: location.speed.isFinite && location.speed >= 0 ? location.speed : nil,
+                courseDeg: location.course.isFinite && location.course >= 0 ? location.course : nil,
                 timestamp: location.timestamp
             )
-        )
+            if Self.isUsable(fix, at: now) { onFix?(fix) }
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
