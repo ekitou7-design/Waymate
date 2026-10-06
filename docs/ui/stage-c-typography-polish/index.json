@@ -1,0 +1,34 @@
+{
+  "source": "tests/native/nav_ui_render_tests.cpp::test_stage_c_product_states",
+  "renderer": "real shared/nav_ui LVGL RGB565 framebuffer; test fixtures only",
+  "size": [
+    466,
+    466
+  ],
+  "clipping": "nominal circle mask; hardware optical/touch acceptance remains",
+  "frames": [
+    "arrived.png",
+    "boot.png",
+    "compass-heading-unavailable.png",
+    "compass.png",
+    "connecting-protocol-not-ready.png",
+    "disconnected.png",
+    "idle-ready.png",
+    "location-stale.png",
+    "maneuver-near.png",
+    "media-chinese-mixed.png",
+    "media-long-utf8.png",
+    "media-paused.png",
+    "media-playing.png",
+    "media-unavailable.png",
+    "navigation-long-text-km.png",
+    "navigation-normal.png",
+    "off-route.png",
+    "rerouting.png",
+    "speed-108-kmh.png",
+    "speed-48-kmh.png",
+    "speed-three-digits.png",
+    "speed-unknown.png",
+    "speed.png"
+  ]
+}

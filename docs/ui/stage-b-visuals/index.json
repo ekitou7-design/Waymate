@@ -1,0 +1,92 @@
+{
+  "media-dark.png": {
+    "test": "WaymateUITests/testAuxiliarySheetsLightAndDarkVisualActions()",
+    "run": "sheets-final",
+    "sourceFile": "5AE93B36-AB28-494D-B62A-70F9CF5FEEFE.png",
+    "name": "Waymate Media sheet — XCUIDeviceAppearance(rawValue 2)_0_F858CD47-0053-45F1-9AC0-0EADEA3EFE18.png"
+  },
+  "media-light.png": {
+    "test": "WaymateUITests/testAuxiliarySheetsLightAndDarkVisualActions()",
+    "run": "sheets-final",
+    "sourceFile": "9402AF99-2B54-4C9A-9C95-20116C92810B.png",
+    "name": "Waymate Media sheet — XCUIDeviceAppearance(rawValue 1)_0_63F0916F-1566-4C69-860B-4FDE9BD9741A.png"
+  },
+  "navigation-demo.png": {
+    "test": "WaymateUITests/testBuiltInNavigationDemoStarts()",
+    "run": "toolbar-final",
+    "sourceFile": "A0E74FA3-69E9-491A-B9AA-E5F86CDFCB32.png",
+    "name": "Waymate native navigation — demo_0_EE5EACFD-E380-49F2-9001-1ED89CC5A833.png"
+  },
+  "device-axxxl.png": {
+    "test": "WaymateUITests/testNativeHomeAccessibilityXXXLVisualState()",
+    "run": "complete",
+    "sourceFile": "865C6F93-EED6-4EB1-A7BF-0FBD4F767E99.png",
+    "name": "Waymate native home — Accessibility XXXL — device details_0_D62AE813-D247-4596-8EF6-3D4D2E80790C.png"
+  },
+  "search-axxxl.png": {
+    "test": "WaymateUITests/testNativeHomeAccessibilityXXXLVisualState()",
+    "run": "complete",
+    "sourceFile": "EA819464-A272-424E-915B-3E16E058FD5C.png",
+    "name": "Waymate native home — Accessibility XXXL — search reachable_0_7E0F3AC5-AF64-43CC-8F11-76219BF2F5AA.png"
+  },
+  "idle-axxxl.png": {
+    "test": "WaymateUITests/testNativeHomeAccessibilityXXXLVisualState()",
+    "run": "complete",
+    "sourceFile": "241E51F1-6C97-46CC-B145-315769E49CF3.png",
+    "name": "Waymate native home — Accessibility XXXL_0_57A59159-215F-4021-AD9A-16585674C1EF.png"
+  },
+  "device-dark.png": {
+    "test": "WaymateUITests/testNativeHomeDarkVisualState()",
+    "run": "complete",
+    "sourceFile": "27AA7C6F-AC71-4BD8-B91C-6A1B829E68B2.png",
+    "name": "Waymate native home — dark — device details_0_DD355228-3DE1-414D-AFA6-7A4377A73A6C.png"
+  },
+  "idle-dark.png": {
+    "test": "WaymateUITests/testNativeHomeDarkVisualState()",
+    "run": "complete",
+    "sourceFile": "2718D195-40C9-444A-AE79-E17FBF0161CF.png",
+    "name": "Waymate native home — dark_0_69DA6019-BF3E-4B76-A78A-3AA90E8D9472.png"
+  },
+  "device-light.png": {
+    "test": "WaymateUITests/testNativeHomeLightVisualState()",
+    "run": "complete",
+    "sourceFile": "C03DC103-52A2-4D89-AE37-B4A262C70FFA.png",
+    "name": "Waymate native home — light — device details_0_8A3F0BF9-ACB9-43B8-8FED-50921A518732.png"
+  },
+  "idle-light.png": {
+    "test": "WaymateUITests/testNativeHomeLightVisualState()",
+    "run": "complete",
+    "sourceFile": "1A4A489B-E0D0-4D42-BE35-DBC3FF6D8D5B.png",
+    "name": "Waymate native home — light_0_7000A7A4-05C1-4F73-AD89-5509D9CAB238.png"
+  },
+  "ride-ended.png": {
+    "test": "WaymateUITests/testStandaloneRideLifecycleUsesProductionControls()",
+    "run": "complete",
+    "sourceFile": "50147D08-AC79-47CB-8D19-E1C76FD2C88A.png",
+    "name": "Waymate production Ride — ended_0_FBF95355-56E7-4CEE-9F66-E042DCBFD36E.png"
+  },
+  "ride-paused.png": {
+    "test": "WaymateUITests/testStandaloneRideLifecycleUsesProductionControls()",
+    "run": "complete",
+    "sourceFile": "48CC7AAE-D851-423E-B0B7-9455FB544DBA.png",
+    "name": "Waymate production Ride — paused_0_FBD4C378-9649-46B3-8B8A-EE3CD37CDB43.png"
+  },
+  "ride-active.png": {
+    "test": "WaymateUITests/testStandaloneRideLifecycleUsesProductionControls()",
+    "run": "complete",
+    "sourceFile": "846597BC-B600-4356-BCF3-C2FC97A62812.png",
+    "name": "Waymate production Ride — active_0_D3E3A626-D6A8-4500-B295-CDC6124DE03D.png"
+  },
+  "maps-dark.png": {
+    "test": "WaymateUITests/testAuxiliarySheetsLightAndDarkVisualActions()",
+    "run": "sheets-final",
+    "sourceFile": "C0BDC727-8BB9-4A9A-A90B-046DEC7252E9.png",
+    "name": "Waymate maps sheet — XCUIDeviceAppearance(rawValue 2)_0_07335D0D-1E27-41E5-8E38-3B4E08D15E74.png"
+  },
+  "maps-light.png": {
+    "test": "WaymateUITests/testAuxiliarySheetsLightAndDarkVisualActions()",
+    "run": "sheets-final",
+    "sourceFile": "45627A05-79BD-4B53-BDCE-188AB8D14A00.png",
+    "name": "Waymate maps sheet — XCUIDeviceAppearance(rawValue 1)_0_AE628E94-6239-4929-93F8-E7A87EE2D467.png"
+  }
+}

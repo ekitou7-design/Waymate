@@ -1,0 +1,46 @@
+{
+  "purpose": "Typography candidates only; does not alter firmware font selection",
+  "base": "docs/ui/stage-c-typography-polish Stage C LVGL capture",
+  "canvas_px": [
+    466,
+    466
+  ],
+  "rasterizer": "Pillow/FreeType, direct target-size font instances",
+  "circle_safe_width_check": "all candidate text runs checked against circular chord with 12 px inset",
+  "schemes": {
+    "Typography-A-Inter": {
+      "hero": 600,
+      "primary": 600,
+      "secondary": 500
+    },
+    "Typography-B-RobotoCondensed": {
+      "hero": 700,
+      "primary": 600,
+      "secondary": 500
+    },
+    "Typography-C-IBMPlex": {
+      "hero": 600,
+      "primary": 600,
+      "secondary": 500
+    }
+  },
+  "pages": [
+    "Speed 48",
+    "Speed 108",
+    "Navigation 320 m",
+    "Navigation 1.2 km",
+    "Navigation 星湖街",
+    "Compass NE / 045°",
+    "Media English",
+    "Media 中英混排",
+    "READY",
+    "DISCONNECTED"
+  ],
+  "previews": [
+    "Typography-A-Inter.png",
+    "Typography-B-RobotoCondensed.png",
+    "Typography-C-IBMPlex.png",
+    "Typography-A-B-C-Comparison.png",
+    "Chinese-Fallback-Samples.png"
+  ]
+}
