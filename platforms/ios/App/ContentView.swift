@@ -71,6 +71,7 @@ struct ContentView: View {
 
     private var homeScreen: some View {
         List {
+            rideSection
             if !model.isGatewayConfigured {
                 Section {
                     Button { showsGatewaySettings = true } label: {
@@ -304,6 +305,7 @@ struct ContentView: View {
 
     private var routePreviewScreen: some View {
         List {
+            rideSection
             if let place = model.selectedPlace {
                 Section {
                     Label {
@@ -454,6 +456,7 @@ struct ContentView: View {
 
     private var activeNavigationScreen: some View {
         List {
+            rideSection
             Section {
                 VStack(spacing: 14) {
                     Image(systemName: navigationSymbol)
@@ -522,6 +525,58 @@ struct ContentView: View {
             ToolbarItem(placement: .topBarTrailing) { deviceToolbarButton }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { navigationActionBar }
+    }
+
+    // Same read-only session projection on home, preview and navigation.
+    private var rideSection: some View {
+        Section("Ride") {
+            if model.rideActive {
+                Text(model.rideSessionState == .paused ? "Ride 已暂停" : "Ride 正在进行")
+                    .accessibilityIdentifier("ride-status")
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    VStack(alignment: .leading, spacing: 6) {
+                        rideValue("骑行时间", value: rideDuration(model.rideElapsedTime), id: "ride-elapsed-time")
+                        rideValue("移动时间", value: rideDuration(model.rideMovingTime), id: "ride-moving-time")
+                        rideValue("距离", value: String(format: "%.2f km", model.rideDistance / 1_000), id: "ride-distance")
+                        rideValue("当前速度", value: model.rideCurrentSpeed.map { String(format: "%.1f km/h", $0 * 3.6) } ?? "--", id: "ride-current-speed")
+                    }
+                    .monospacedDigit()
+                }
+                if model.rideSessionState == .active {
+                    Button("PAUSE", action: model.pauseRide)
+                        .accessibilityIdentifier("ride-pause-button")
+                } else {
+                    Button("RESUME", action: model.resumeRide)
+                        .accessibilityIdentifier("ride-resume-button")
+                }
+                Button("END RIDE", role: .destructive, action: model.stopRide)
+                    .accessibilityIdentifier("ride-end-button")
+            } else {
+                Button("START RIDE", action: model.startRide)
+                    .accessibilityIdentifier("ride-start-button")
+                if model.lastRideRecord != nil {
+                    Text("最近一次 Ride 已结束")
+                        .accessibilityIdentifier("ride-record-ready")
+                }
+            }
+            if let failure = model.rideFailure {
+                failureMessage(failure)
+                    .accessibilityIdentifier("ride-error")
+            }
+        }
+    }
+
+    private func rideValue(_ title: String, value: String, id: String) -> some View {
+        LabeledContent(title, value: value)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(title)
+            .accessibilityValue(value)
+            .accessibilityIdentifier(id)
+    }
+
+    private func rideDuration(_ seconds: TimeInterval) -> String {
+        let total = Int(max(0, seconds))
+        return String(format: "%02d:%02d:%02d", total / 3_600, total / 60 % 60, total % 60)
     }
 
     private func rideMetric(_ title: String, value: String) -> some View {

@@ -16,6 +16,16 @@ final class AppModel: ObservableObject {
 
     @Published private(set) var rideFailure: String?
     var rideRecord: RideRecord? { rideSession.record }
+    @Published private(set) var lastRideRecord: RideRecord?
+    // Transaction ownership only; RideSession remains the sole live Ride state.
+    private var pendingAutomaticRide = false
+
+    var presentationDecision: PresentationDecision {
+        PresentationCoordinator.evaluate(
+            input: .init(navigation: navigationComponentState, rideActive: rideActive, mediaInteraction: nil),
+            now: ContinuousClock().now
+        )
+    }
     var rideTrack: [RideTrackPoint] { rideSession.track }
     var rideDistance: Double { rideSession.distance }
     var rideMovingTime: TimeInterval { rideSession.movingTime }
@@ -27,13 +37,6 @@ final class AppModel: ObservableObject {
         guard !rideSession.isActive else { return }
         guard subscribeRideLocation() else { return }
         rideSession.start(at: rideNow())
-    }
-
-    /// PRD integration seam. Wire after successful formal navigation startup
-    /// once the product has an explicit Stop Ride entry point.
-    func startRideForNavigation() {
-        guard isNavigationActive, !isDemoActive else { return }
-        startRide()
     }
 
     func pauseRide() {
@@ -48,7 +51,9 @@ final class AppModel: ObservableObject {
     }
 
     func stopRide() {
-        rideSession.stop(at: rideNow())
+        guard rideActive else { return }
+        pendingAutomaticRide = false
+        lastRideRecord = rideSession.stop(at: rideNow())
         liveLocation.stopRide()
     }
 
@@ -376,6 +381,7 @@ final class AppModel: ObservableObject {
     }
 
     func startNavigation() {
+        guard !isNavigationActive else { return }
         guard !isUpdatingGateway, isGatewayConfigured else {
             navigationFailure = "请先在网关设置中填写服务地址"
             return
@@ -411,6 +417,15 @@ final class AppModel: ObservableObject {
     /// Tests can supply a route provider without permissions or network requests.
     func beginLiveNavigation(destination: WGS84Point, destinationPOIID: String? = nil,
                              routeProvider: any NavigationRouteProviding) {
+        guard !isNavigationActive, !isUpdatingGateway else { return }
+        if !rideActive {
+            startRide()
+            guard rideActive else {
+                navigationFailure = rideFailure
+                return
+            }
+            pendingAutomaticRide = true
+        }
         surroundingMap.reset()
         runtime?.stop()
         let runtime = SharedNavigationRuntime(locationSource: liveLocation, routeProvider: routeProvider)
@@ -421,6 +436,7 @@ final class AppModel: ObservableObject {
         let started = runtime.start(destination: destination, destinationPOIID: destinationPOIID)
         isNavigationActive = started
         if !started {
+            rollbackAutomaticRide()
             self.runtime = nil
         }
     }
@@ -453,6 +469,8 @@ final class AppModel: ObservableObject {
     }
 
     func stopNavigation() {
+        // An explicit End Nav keeps even an acquiring Ride running.
+        pendingAutomaticRide = false
         runtime?.stop()
         runtime = nil
         isNavigationActive = false
@@ -509,6 +527,7 @@ final class AppModel: ObservableObject {
             self?.navigation = snapshot
             if snapshot.stateName == "navigating" || snapshot.stateName == "arrived" {
                 self?.navigationFailure = nil
+                self?.pendingAutomaticRide = false
             }
             self?.bluetooth.sendNavigationSnapshot(snapshot)
             if snapshot.hasRouteView {
@@ -519,8 +538,24 @@ final class AppModel: ObservableObject {
             }
         }
         runtime.onFailure = { [weak self] message in
-            self?.navigationFailure = message
+            guard let self else { return }
+            self.navigationFailure = message
+            if self.pendingAutomaticRide {
+                self.rollbackAutomaticRide()
+                self.runtime?.stop()
+                self.runtime = nil
+                self.isNavigationActive = false
+                self.surroundingMap.reset()
+            }
         }
+    }
+
+    private func rollbackAutomaticRide() {
+        guard pendingAutomaticRide else { return }
+        pendingAutomaticRide = false
+        liveLocation.stopRide()
+        // A failed automatic start is discarded, never published as a completed Ride.
+        rideSession = RideSession()
     }
 
     private func beginRoutePreviewRequestIfPossible() {

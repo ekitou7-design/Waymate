@@ -346,7 +346,6 @@ final class RideTrackingTests: XCTestCase {
         let model = AppModel(startsServices: false, locationSource: source, rideNow: { now })
         model.beginLiveNavigation(destination: .init(longitudeDeg: 117.1, latitudeDeg: 36.1),
                                   routeProvider: TrackingTestRouteProvider())
-        model.startRideForNavigation()
         XCTAssertTrue(model.isNavigationActive)
         XCTAssertTrue(model.rideActive)
         XCTAssertEqual(source.starts, 1)
@@ -356,7 +355,6 @@ final class RideTrackingTests: XCTestCase {
         XCTAssertEqual(model.rideTrack.count, 2)
         model.beginLiveNavigation(destination: .init(longitudeDeg: 117.2, latitudeDeg: 36.2),
                                   routeProvider: TrackingTestRouteProvider())
-        model.startRideForNavigation()
         XCTAssertEqual(source.starts, 1)
         XCTAssertEqual(model.rideTrack.count, 2) // rerouting/start does not replace Ride
         model.stopNavigation()
@@ -377,7 +375,6 @@ final class RideTrackingTests: XCTestCase {
         let model = AppModel(startsServices: false, locationSource: source, rideNow: { self.origin })
         model.beginLiveNavigation(destination: .init(longitudeDeg: 117.1, latitudeDeg: 36.1),
                                   routeProvider: TrackingTestRouteProvider())
-        model.startRideForNavigation()
         XCTAssertFalse(model.isNavigationActive)
         XCTAssertFalse(model.rideActive)
         XCTAssertNil(model.rideRecord)
@@ -390,7 +387,6 @@ final class RideTrackingTests: XCTestCase {
         let model = AppModel(startsServices: false, locationSource: source, rideNow: { now })
         model.beginLiveNavigation(destination: .init(longitudeDeg: 117.1, latitudeDeg: 36.1),
                                   routeProvider: TrackingTestRouteProvider())
-        model.startRideForNavigation()
         source.emit(fix(0))
         now = time(2)
         source.emit(fix(2, meters: 10))
@@ -400,10 +396,10 @@ final class RideTrackingTests: XCTestCase {
         source.emit(fix(20, meters: 1_000))
         XCTAssertEqual(model.rideTrack.count, 2)
         XCTAssertEqual(model.rideMovingTime, 2)
-        // Starting another navigation while paused preserves the paused session.
+        // End Nav, then choose another destination while keeping the paused Ride.
+        model.stopNavigation()
         model.beginLiveNavigation(destination: .init(longitudeDeg: 117.2, latitudeDeg: 36.2),
                                   routeProvider: TrackingTestRouteProvider())
-        model.startRideForNavigation()
         XCTAssertEqual(model.rideSessionState, .paused)
         model.resumeRide()
         XCTAssertEqual(source.starts, 2)
@@ -417,16 +413,17 @@ final class RideTrackingTests: XCTestCase {
     }
 
     @MainActor
-    func testProductionAutomaticRideLinkRemainsDeferred() async {
+    func testProductionAutomaticRideLinkStartsWithoutExtraCommand() async {
         let source = TrackingTestSource()
         let model = AppModel(startsServices: false, locationSource: source, rideNow: { self.origin })
-        model.startRideForNavigation()
         XCTAssertFalse(model.rideActive)
         model.beginLiveNavigation(destination: .init(longitudeDeg: 117.1, latitudeDeg: 36.1),
                                   routeProvider: TrackingTestRouteProvider())
         XCTAssertTrue(model.isNavigationActive)
-        XCTAssertFalse(model.rideActive)
+        XCTAssertTrue(model.rideActive)
         model.stopNavigation()
+        XCTAssertEqual(source.stops, 0)
+        model.stopRide()
         XCTAssertEqual(source.stops, 1)
     }
 

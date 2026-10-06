@@ -5,6 +5,43 @@ import CoreLocation
 final class WaymateUITests: XCTestCase {
     private var previousLocation: XCUILocation?
 
+    func testStandaloneRideLifecycleUsesProductionControls() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--moto-ui-offline"]
+        addUIInterruptionMonitor(withDescription: "Location permission") { alert in
+            let allow = alert.buttons["Allow While Using App"]
+            if allow.exists { allow.tap(); return true }
+            let localized = alert.buttons["使用App时允许"]
+            if localized.exists { localized.tap(); return true }
+            return false
+        }
+        app.launch()
+        let start = app.buttons["ride-start-button"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        start.tap()
+        if app.alerts.firstMatch.exists { app.tap() }
+        let pause = app.buttons["ride-pause-button"]
+        XCTAssertTrue(pause.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Ride 正在进行"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["ride-elapsed-time"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["ride-moving-time"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["ride-distance"].exists)
+        keepScreenshot(of: app, named: "Waymate production Ride — active")
+        pause.tap()
+        XCTAssertTrue(app.staticTexts["Ride 已暂停"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.descendants(matching: .any)["ride-current-speed"].firstMatch.value as? String, "--")
+        let resume = app.buttons["ride-resume-button"]
+        XCTAssertTrue(resume.exists)
+        keepScreenshot(of: app, named: "Waymate production Ride — paused")
+        resume.tap()
+        XCTAssertTrue(pause.waitForExistence(timeout: 3))
+        app.buttons["ride-end-button"].tap()
+        XCTAssertTrue(start.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["ride-record-ready"].exists)
+        XCTAssertFalse(pause.exists)
+        keepScreenshot(of: app, named: "Waymate production Ride — ended")
+    }
+
     func testLiveShanghaiCitySearchShowsDownloadCoverage() throws {
         let app = XCUIApplication()
         app.launch()
@@ -179,6 +216,7 @@ final class WaymateUITests: XCTestCase {
 
         let navigationBar = app.navigationBars["导航中"]
         XCTAssertTrue(navigationBar.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["ride-pause-button"].waitForExistence(timeout: 5))
         let end = app.buttons["结束导航"]
         XCTAssertTrue(end.waitForExistence(timeout: 5))
         XCTAssertTrue(end.isEnabled)
@@ -192,6 +230,9 @@ final class WaymateUITests: XCTestCase {
         XCTAssertFalse(navigationBar.exists)
         XCTAssertFalse(preview.exists)
         XCTAssertFalse(app.buttons["route-option-0"].exists)
+        XCTAssertTrue(app.buttons["ride-pause-button"].exists)
+        app.buttons["ride-end-button"].tap()
+        XCTAssertTrue(app.buttons["ride-start-button"].waitForExistence(timeout: 3))
     }
 
     func testRoutePreviewSwipeRightReturnsToSearch() throws {

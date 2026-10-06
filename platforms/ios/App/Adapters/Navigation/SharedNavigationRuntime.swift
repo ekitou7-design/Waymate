@@ -172,7 +172,10 @@ final class SharedNavigationRuntime {
             defer { self?.networkTasks[request.requestID] = nil }
             do {
                 let envelope = try await routeProvider.route(for: request)
-                guard !Task.isCancelled, envelope.requestID == request.requestID else { return }
+                guard !Task.isCancelled else { return }
+                guard envelope.requestID == request.requestID else {
+                    throw NavigationSourceError.unavailable("路线响应与请求不匹配")
+                }
                 guard let self else { return }
                 let previousGeneration = self.bridge.snapshot.routeGeneration
                 let commands = self.bridge.acceptRoute(
@@ -191,6 +194,9 @@ final class SharedNavigationRuntime {
                     )
                 }
                 self.publish(commands)
+                if !request.isReroute, self.activeRoute == nil {
+                    self.onFailure?("无法接受导航路线，请重新规划")
+                }
             } catch is CancellationError {
                 return
             } catch {
