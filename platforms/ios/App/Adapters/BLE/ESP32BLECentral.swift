@@ -124,6 +124,27 @@ enum BLEOutboundBatch {
     }
 }
 
+/// Pending is consumed by the write pump; latest survives transport teardown.
+/// Geometry and page stay in the same immutable NavCore snapshot.
+struct BLENavigationStateCache {
+    private(set) var latest: MotoNavCoreSnapshot?
+    private(set) var pending: MotoNavCoreSnapshot?
+
+    mutating func update(_ state: MotoNavCoreSnapshot) {
+        latest = state
+        pending = state
+    }
+
+    mutating func takePending() -> MotoNavCoreSnapshot? {
+        defer { pending = nil }
+        return pending
+    }
+
+    mutating func resynchronize() {
+        pending = latest
+    }
+}
+
 /// A queued map is not delivered until the terminal acknowledges its complete
 /// logical message. Retries are freshly encoded to preserve wire sequence order.
 struct BLEMapSceneDelivery {
@@ -227,9 +248,9 @@ final class ESP32BLECentral: NSObject {
     private var deviceToPhoneCharacteristic: CBCharacteristic?
     private var codec: MotoBLEProtocolCodec?
     private var handshake: BLEHandshakeGate?
-    private var pendingNavigationState: MotoNavCoreSnapshot?
-    private var pendingMediaState: PhoneMediaState?
-    private var pendingMapScene: OfflineMapSceneWindow?
+    private var navigationState = BLENavigationStateCache()
+    private var latestMediaState: PhoneMediaState?
+    private var latestMapScene: OfflineMapSceneWindow?
     private var mapSceneDelivery = BLEMapSceneDelivery()
     private var mapSceneFinalFrame: Data?
     private var shouldMaintainConnection = false
@@ -309,21 +330,21 @@ final class ESP32BLECentral: NSObject {
     }
 
     func sendNavigationSnapshot(_ state: MotoNavCoreSnapshot) {
-        pendingNavigationState = state
+        navigationState.update(state)
         scheduleNavigationTransmit()
     }
 
     /// Retains the newest Apple Music projection while disconnected and sends
     /// it as soon as the encrypted v1 session becomes ready.
     func sendMediaState(_ state: PhoneMediaState) {
-        pendingMediaState = state
+        latestMediaState = state
         flushPendingMediaState()
     }
 
     /// Map scenes are sparse, low-frequency replacements.  Retain only the
     /// newest local window while disconnected or while a prior write drains.
     func sendMapScene(_ scene: OfflineMapSceneWindow) {
-        pendingMapScene = scene
+        latestMapScene = scene
         flushPendingMapScene()
     }
 
@@ -578,15 +599,21 @@ final class ESP32BLECentral: NSObject {
                 snapshot.negotiatedProtocol = "V1"
                 lastValidDeviceFrameAtMs = Self.monotonicMs()
                 startHeartbeat()
-                if let pendingNavigationState {
-                    sendNavigationSnapshot(pendingNavigationState)
-                }
-                flushPendingMediaState()
-                flushPendingMapScene()
+                resynchronizeCurrentDisplayState()
             }
         } catch {
             recoverFromTransportError(error.localizedDescription)
         }
+    }
+
+    /// Publish current state only. Never replay device commands or start the
+    /// navigation runtime again. clearProtocolState reset geometry/map delivery
+    /// bookkeeping, so this session receives a complete display baseline.
+    private func resynchronizeCurrentDisplayState() {
+        navigationState.resynchronize()
+        scheduleNavigationTransmit()
+        flushPendingMediaState()
+        flushPendingMapScene()
     }
 
     private func scheduleHandshakeTimeout(for expectedStage: BLEHandshakeStage) {
@@ -785,7 +812,7 @@ final class ESP32BLECentral: NSObject {
     private func scheduleNavigationTransmit() {
         guard protocolReady,
               codec != nil,
-              pendingNavigationState != nil,
+              navigationState.pending != nil,
               navigationTransmitTask == nil
         else { return }
 
@@ -809,12 +836,11 @@ final class ESP32BLECentral: NSObject {
     private func flushPendingNavigationState() {
         guard protocolReady,
               let codec,
-              let state = pendingNavigationState
+              let state = navigationState.takePending()
         else { return }
 
         // Take the newest immutable NavCore snapshot. Any update published
         // while encoding runs will become the next coalesced transmission.
-        pendingNavigationState = nil
         let geometrySignature = Self.routeGeometrySignature(for: state)
         do {
             // NavigationSnapshot is at most 211 bytes in v1, hence at most two
@@ -848,14 +874,12 @@ final class ESP32BLECentral: NSObject {
             flushPendingMapScene()
         } catch {
             // Preserve the newest state for the next protocol-ready session.
-            if pendingNavigationState == nil {
-                pendingNavigationState = state
-            }
+            navigationState.resynchronize()
             recoverFromTransportError(error.localizedDescription)
             return
         }
 
-        if pendingNavigationState != nil {
+        if navigationState.pending != nil {
             scheduleNavigationTransmit()
         }
     }
@@ -863,7 +887,7 @@ final class ESP32BLECentral: NSObject {
     private func flushPendingMediaState() {
         guard protocolReady,
               let codec,
-              let state = pendingMediaState
+              let state = latestMediaState
         else { return }
 
         do {
@@ -878,7 +902,7 @@ final class ESP32BLECentral: NSObject {
         guard protocolReady,
               peerCapabilities & Self.mapSceneCapability != 0,
               let codec,
-              let scene = pendingMapScene,
+              let scene = latestMapScene,
               mapSceneDelivery.shouldSend(revision: scene.revision,
                                           queuedFrames: outboundFrames.count)
         else { return }

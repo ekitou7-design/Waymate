@@ -583,10 +583,16 @@ void BleNavTransport::run_rx_worker() {
       send_message(moto::ble::Message{heartbeat});
     }
 
-    if (epoch_gate.connected() && watchdog_.expired(now)) {
-      // Keep the physical BLE connection, but mark navigation stale until a
-      // valid frame resumes. This separates radio link from app liveness.
+    if (epoch_gate.accepts(connection_epoch_.load()) && watchdog_.expired(now)) {
+      // PhoneNavBridge discards geometry/map/media on liveness loss. A heartbeat
+      // cannot restore that baseline; force the existing reconnect + handshake
+      // path so the phone resets its delivery cache and republishes all state.
+      epoch_gate.invalidate();
+      protocol_ready = false;
       note_link(false);
+      const int result = ble_gap_terminate(connection_handle_.load(),
+                                           BLE_ERR_REM_USER_CONN_TERM);
+      ESP_LOGW(kTag, "phone watchdog expired; disconnect requested: %d", result);
     }
   }
 }

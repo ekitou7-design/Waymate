@@ -1,4 +1,5 @@
 import Foundation
+import MotoNavigationCore
 import XCTest
 @testable import Waymate
 
@@ -227,6 +228,85 @@ final class BLEWritePumpPolicyTests: XCTestCase {
             pendingFrameCount: 127,
             snapshotFrameCount: 2
         ))
+    }
+
+    func testSentNavigationSurvivesDisconnectAndNewHandshakeWithoutRuntimeTick() throws {
+        var cache = BLENavigationStateCache()
+        let routed = makeRoutedState()
+        cache.update(routed)
+        XCTAssertTrue(cache.takePending() === routed)
+        XCTAssertNil(cache.pending, "A successful send consumes pending only")
+        XCTAssertTrue(cache.latest === routed)
+
+        // Each new session must replay even when there is no location or Tick.
+        for session in UInt32(1)...3 {
+            var gate = BLEHandshakeGate(localMaximumFrameSize: 182)
+            try gate.begin(sessionID: session)
+            let ready = BLEDeviceHandshakeStatus(
+                role: 2, state: 1, minimumVersion: 1, maximumVersion: 1,
+                capabilities: BLEHandshakeGate.requiredDeviceCapabilities,
+                sessionID: session, maximumFrameSize: 182, heartbeatIntervalMs: 1_000
+            )
+            _ = try gate.acceptDeviceReady(ready)
+            XCTAssertNotEqual(gate.stage, .ready)
+            _ = try gate.acceptDeviceReady(ready)
+            XCTAssertEqual(gate.stage, .ready)
+            XCTAssertThrowsError(try gate.validateProtocolSession(session + 10))
+            cache.resynchronize()
+            cache.resynchronize() // Coalesce; do not queue duplicate work.
+            let replay = try XCTUnwrap(cache.takePending())
+            XCTAssertTrue(replay === routed)
+            XCTAssertNil(cache.takePending())
+            let codec = MotoBLEProtocolCodec(maximumFrameSize: 182)
+            let input = MotoBLENavigationSnapshotInput()
+            input.stateName = "navigating"
+            input.networkName = "online"
+            input.displayPageName = "compass"
+            input.hasRouteView = true
+            input.routeToken = codec.routeToken(forRouteID: replay.routeID)
+            input.routeGeneration = replay.routeGeneration
+            let frames = try BLEOutboundBatch.encodeNavigation(
+                geometryRequired: true,
+                encodeGeometry: { try codec.encodeRouteGeometry(from: replay) },
+                encodeSnapshot: { try codec.encodeNavigationSnapshot(input) }
+            )
+            let headers = try frames.map(parseFrameHeader)
+            XCTAssertEqual(headers.first?.type, 0x11)
+            XCTAssertEqual(headers.last?.type, 0x10)
+        }
+    }
+
+    func testDisconnectedUpdatesAndCancellationReplaceTheReplayBaseline() {
+        var cache = BLENavigationStateCache()
+        let oldRoute = makeRoutedState()
+        cache.update(oldRoute)
+        _ = cache.takePending()
+        let newRoute = makeRoutedState()
+        newRoute.setValue("rerouted", forKey: "routeID")
+        newRoute.setValue(NSNumber(value: 8), forKey: "routeGeneration")
+        cache.update(newRoute)
+        cache.resynchronize()
+        XCTAssertTrue(cache.takePending() === newRoute)
+        XCTAssertEqual(cache.latest?.routeGeneration, 8)
+        // An idle/cancelled snapshot must replace active navigation too.
+        let cancelled = MotoNavCoreBridge().snapshot
+        cache.update(cancelled)
+        cache.resynchronize()
+        XCTAssertTrue(cache.takePending() === cancelled)
+        XCTAssertFalse(cache.latest?.hasRouteView ?? true)
+    }
+
+    func testNewSessionResetsMapAcknowledgementWithoutRequiringNewWindow() {
+        var delivery = BLEMapSceneDelivery()
+        delivery.sent(revision: 77, sequence: 42, nowMs: 1_000)
+        XCTAssertTrue(delivery.acknowledge(sequence: 42, status: 0))
+        XCTAssertFalse(delivery.shouldSend(revision: 77, queuedFrames: 0))
+        delivery = BLEMapSceneDelivery() // clearProtocolState on reconnect
+        XCTAssertFalse(delivery.acknowledge(sequence: 42, status: 0))
+        XCTAssertTrue(delivery.shouldSend(revision: 77, queuedFrames: 0))
+        delivery.queued(revision: 77, sequence: 50)
+        XCTAssertFalse(delivery.acknowledge(sequence: 42, status: 0))
+        XCTAssertTrue(delivery.acknowledge(sequence: 50, status: 0))
     }
 
     private func makeRoutedState() -> MotoNavCoreSnapshot {

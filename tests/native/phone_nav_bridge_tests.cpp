@@ -228,6 +228,79 @@ void test_phone_connection_lifecycle_reaches_the_ui() {
         MOTO_UI_PHONE_OFFLINE);
 }
 
+void test_reconnect_replays_complete_display_without_user_commands() {
+  moto::test::reset_phone_nav_bridge_probe();
+  moto::nav::NavPresenter presenter;
+  PhoneNavBridge bridge(presenter);
+  MusicSenderContext sender;
+  bridge.set_sender(record_music_sender, &sender);
+  bridge.install_ui_callbacks();
+
+  moto::ble::NavigationSnapshot nav;
+  nav.state = moto::ble::NavigationState::Navigating;
+  nav.network = moto::ble::NetworkState::Online;
+  nav.display_page = moto::ble::DisplayPage::Compass;
+  nav.flags = moto::ble::NavigationHasFix | moto::ble::NavigationHasRouteView;
+  nav.route_token = 77;
+  nav.route_generation = 9;
+  nav.road_name = "恢复当前路线";
+  moto::ble::RouteGeometry geometry;
+  geometry.route_token = nav.route_token;
+  geometry.route_generation = nav.route_generation;
+  geometry.total_point_count = 2;
+  geometry.view_origin = {36'670'000, 117'130'000};
+  geometry.points = {geometry.view_origin, {36'670'100, 117'130'100}};
+  moto::ble::MapScene scene;
+  scene.scene_revision = 77;
+  scene.view_origin = geometry.view_origin;
+  scene.radius_m = 500;
+  moto::ble::MapRoadPolyline road;
+  road.points = geometry.points;
+  scene.roads.push_back(road);
+  moto::ble::MediaState media;
+  media.flags = moto::ble::MediaConnected | moto::ble::MediaPlaying;
+  media.source_name = "APPLE MUSIC";
+  media.track_title = "当前歌曲";
+
+  for (std::uint32_t session = 1; session <= 3; ++session) {
+    nav.display_page = session == 2 ? moto::ble::DisplayPage::Music
+                                  : moto::ble::DisplayPage::Compass;
+    bridge.on_link_state(true);
+    moto::ble::ConnectionStatus status;
+    status.role = moto::ble::EndpointRole::Phone;
+    status.session_id = session;
+    status.capabilities = moto::ble::CapabilityMediaState |
+                          moto::ble::CapabilityMusicCommands;
+    status.state = moto::ble::ConnectionState::Starting;
+    CHECK(bridge.on_message(make_message(status, 1)) == moto::ble::AckStatus::Ok);
+    status.state = moto::ble::ConnectionState::Ready;
+    CHECK(bridge.on_message(make_message(status, 2)) == moto::ble::AckStatus::Ok);
+    CHECK(bridge.on_message(make_message(geometry, 3)) == moto::ble::AckStatus::Ok);
+    CHECK(bridge.on_message(make_message(nav, 4)) == moto::ble::AckStatus::Ok);
+    CHECK(bridge.on_message(make_message(scene, 5)) == moto::ble::AckStatus::Ok);
+    CHECK(bridge.on_message(make_message(media, 6)) == moto::ble::AckStatus::Ok);
+    pump(bridge);
+    CHECK(moto::test::phone_nav_bridge_last_phone_connection() == MOTO_UI_PHONE_ONLINE);
+    CHECK(moto::test::phone_nav_bridge_last_route_point_count() == 2);
+    CHECK(moto::test::phone_nav_bridge_last_road_point_count() == 2);
+    CHECK(presenter.ui_state().page ==
+          (session == 2 ? MOTO_UI_PAGE_MUSIC : MOTO_UI_PAGE_COMPASS));
+    CHECK(moto::test::phone_nav_bridge_music_page_enabled());
+    CHECK(moto::test::phone_nav_bridge_media_playing());
+    CHECK(moto::test::phone_nav_bridge_media_title() == "当前歌曲");
+    CHECK(sender.commands.empty());
+    const int renders = moto::test::phone_nav_bridge_apply_count();
+    pump(bridge);
+    CHECK(moto::test::phone_nav_bridge_apply_count() == renders);
+
+    bridge.on_link_state(false);
+    pump(bridge);
+    CHECK(moto::test::phone_nav_bridge_last_route_point_count() == 0);
+    CHECK(moto::test::phone_nav_bridge_last_road_point_count() == 0);
+    CHECK(!moto::test::phone_nav_bridge_media_connected());
+  }
+}
+
 void test_music_capability_state_and_touch_commands() {
   moto::test::reset_phone_nav_bridge_probe();
   moto::nav::NavPresenter presenter;
@@ -572,6 +645,7 @@ int main() {
   test_ble_submission_never_waits_for_lvgl_and_retries_latest_state();
   test_phone_connection_lifecycle_reaches_the_ui();
   test_music_capability_state_and_touch_commands();
+  test_reconnect_replays_complete_display_without_user_commands();
   test_demo_uses_the_production_presenter_path();
   test_ios_demo_token_attaches_context_and_live_route_clears_it();
   test_map_scene_atomically_replaces_roads_and_buildings_at_capacity();

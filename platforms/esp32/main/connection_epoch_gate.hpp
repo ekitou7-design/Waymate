@@ -27,6 +27,10 @@ class ConnectionEpochGate {
     return connected_ && packet_epoch == epoch_;
   }
 
+  // Retire a watchdog-expired connection while GAP teardown is asynchronous.
+  // No packet (including a heartbeat) may revive it before a new physical epoch.
+  void invalidate() noexcept { connected_ = false; }
+
   [[nodiscard]] bool connected() const noexcept { return connected_; }
 
  private:

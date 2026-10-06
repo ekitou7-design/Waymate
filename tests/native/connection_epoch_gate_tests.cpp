@@ -46,6 +46,20 @@ void test_same_epoch_does_not_reset_session_state() {
   CHECK(gate.accepts(42));
 }
 
+void test_watchdog_retirement_requires_new_epoch() {
+  moto::esp32::ConnectionEpochGate gate(42, true);
+  gate.invalidate();
+  CHECK(!gate.connected());
+  CHECK(!gate.accepts(42));  // A heartbeat cannot revive the expired session.
+  gate.invalidate();       // Repeated watchdog handling is idempotent.
+  CHECK(!gate.synchronize(42, true));
+  CHECK(!gate.accepts(42));
+  CHECK(gate.synchronize(43, false));
+  CHECK(gate.synchronize(44, true));
+  CHECK(!gate.accepts(42)); // Old ACK/business packets cannot reach the bridge.
+  CHECK(gate.accepts(44));
+}
+
 void test_only_tx_subscription_events_change_notify_state() {
   constexpr std::uint16_t tx_value_handle = 0x0042;
   CHECK(moto::esp32::is_tx_subscription_event(0x0042, tx_value_handle));
@@ -60,6 +74,7 @@ int main() {
   test_packets_from_previous_connection_are_rejected();
   test_same_epoch_does_not_reset_session_state();
   test_only_tx_subscription_events_change_notify_state();
+  test_watchdog_retirement_requires_new_epoch();
 
   if (failures != 0) {
     std::cerr << failures << " connection epoch checks failed\n";
