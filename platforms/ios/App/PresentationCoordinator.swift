@@ -44,6 +44,8 @@ enum PresentationCoordinator {
 
     struct Input: Equatable, Sendable {
         let navigation: NavigationComponentState?
+        /// Read-only RideSession.isActive projection (AppModel.rideActive).
+        /// This input is a fact for evaluation, never owned or changed here.
         let rideActive: Bool
         let mediaInteraction: MediaInteraction?
     }

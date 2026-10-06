@@ -9,6 +9,18 @@ final class AppModel: ObservableObject {
     @Published private(set) var navigationFailure: String?
     @Published private(set) var isNavigationActive = false
     @Published private(set) var isDemoActive = false
+    @Published private var rideSession = RideSession()
+
+    var rideSessionState: RideSessionState { rideSession.state }
+    var rideActive: Bool { rideSession.isActive }
+
+    func startRide() {
+        rideSession.start()
+    }
+
+    func stopRide() {
+        rideSession.stop()
+    }
 
     @Published var destinationQuery = ""
     @Published private(set) var placeResults: [PlaceSearchResult] = []
@@ -41,7 +53,7 @@ final class AppModel: ObservableObject {
     private static let recentPlacesKey = "Waymate.RecentPlaces.v1"
     private static let legacyRecentPlacesKey = "MotoGPS.RecentPlaces.v1"
 
-    init(gatewayBaseURL: URL = AppConfiguration.gatewayBaseURL) {
+    init(gatewayBaseURL: URL = AppConfiguration.gatewayBaseURL, startsServices: Bool = true) {
         liveRouteProvider = AmapGatewayRouteProvider(baseURL: gatewayBaseURL)
         placeProvider = AmapGatewayPlaceProvider(baseURL: gatewayBaseURL)
         mapGatewayBaseURL = gatewayBaseURL
@@ -100,6 +112,9 @@ final class AppModel: ObservableObject {
                 self.failRoutePreview("暂时无法获取当前位置，请到开阔位置后重试")
             }
         }
+
+        // Owner lifecycle tests can run without requesting permissions or services.
+        guard startsServices else { return }
 
         #if DEBUG
         // Offline UI checks must not request device permissions or contact services.
