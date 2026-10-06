@@ -786,7 +786,7 @@ struct ContentView: View {
     }
 
     private var hasNavigationEstimate: Bool {
-        ["navigating", "rerouting", "arrived"].contains(model.navigation.stateName)
+        model.navigationComponentState.isNavigationValid
     }
 
     private var remainingDuration: String {

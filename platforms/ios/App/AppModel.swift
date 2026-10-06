@@ -204,12 +204,18 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var navigationComponentState: NavigationComponentState {
+        NavigationComponentState(snapshot: navigation)
+    }
+
     var remainingDistanceText: String {
-        formatDistance(navigation.remainingDistanceM)
+        guard let meters = navigationComponentState.remainingDistanceM else { return "—" }
+        return formatDistance(meters)
     }
 
     var remainingDurationText: String {
-        formatDuration(Int(navigation.remainingDurationS))
+        guard let seconds = navigationComponentState.remainingDurationS else { return "—" }
+        return formatDuration(Int(seconds))
     }
 
     var primaryActionTitle: String {
