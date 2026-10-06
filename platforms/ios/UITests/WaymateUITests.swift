@@ -22,6 +22,7 @@ final class WaymateUITests: XCTestCase {
         if app.alerts.firstMatch.exists { app.tap() }
         let pause = app.buttons["ride-pause-button"]
         XCTAssertTrue(pause.waitForExistence(timeout: 10))
+        reveal(pause, in: app)
         XCTAssertTrue(app.staticTexts["Ride 正在进行"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["ride-elapsed-time"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["ride-moving-time"].exists)
@@ -35,7 +36,13 @@ final class WaymateUITests: XCTestCase {
         keepScreenshot(of: app, named: "Waymate production Ride — paused")
         resume.tap()
         XCTAssertTrue(pause.waitForExistence(timeout: 3))
+        reveal(app.buttons["ride-end-button"], in: app)
         app.buttons["ride-end-button"].tap()
+        app.buttons["取消"].tap()
+        XCTAssertTrue(pause.exists)
+        XCTAssertFalse(start.exists)
+        app.buttons["ride-end-button"].tap()
+        app.buttons["结束 Ride"].tap()
         XCTAssertTrue(start.waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["ride-record-ready"].exists)
         XCTAssertFalse(pause.exists)
@@ -47,7 +54,7 @@ final class WaymateUITests: XCTestCase {
         app.launch()
         let maps = app.buttons["map-downloads-button"]
         XCTAssertTrue(maps.waitForExistence(timeout: 5))
-        if !maps.isHittable { app.swipeUp() }
+        reveal(maps, in: app)
         maps.tap()
         app.buttons["map-download-city"].tap()
         let search = app.searchFields.firstMatch
@@ -67,7 +74,7 @@ final class WaymateUITests: XCTestCase {
         app.launch()
         let maps = app.buttons["map-downloads-button"]
         XCTAssertTrue(maps.waitForExistence(timeout: 5))
-        if !maps.isHittable { app.swipeUp() }
+        reveal(maps, in: app)
         maps.tap()
         XCTAssertTrue(app.descendants(matching: .any)["map-downloads-sheet"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["自动加载周边地图"].exists)
@@ -232,6 +239,7 @@ final class WaymateUITests: XCTestCase {
         XCTAssertFalse(app.buttons["route-option-0"].exists)
         XCTAssertTrue(app.buttons["ride-pause-button"].exists)
         app.buttons["ride-end-button"].tap()
+        app.buttons["结束 Ride"].tap()
         XCTAssertTrue(app.buttons["ride-start-button"].waitForExistence(timeout: 3))
     }
 
@@ -292,8 +300,11 @@ final class WaymateUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
+        reveal(app.buttons["更多"], in: app)
+        app.buttons["更多"].tap()
         let demo = app.buttons["demo-navigation-button"]
         XCTAssertTrue(demo.waitForExistence(timeout: 5))
+        reveal(demo, in: app)
         demo.tap()
 
         // Demo may briefly show acquiring/planning before navigating.
@@ -301,14 +312,24 @@ final class WaymateUITests: XCTestCase {
         XCTAssertTrue(end.waitForExistence(timeout: 15))
         XCTAssertTrue(end.isEnabled)
         keepScreenshot(of: app, named: "Waymate native navigation — demo")
+        let display = app.buttons["device-details-button"]
+        XCTAssertTrue(display.exists)
+        XCTAssertTrue(display.isHittable)
+        display.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["device-details-sheet"].waitForExistence(timeout: 3))
+        app.buttons["device-details-done"].tap()
+        XCTAssertTrue(end.waitForExistence(timeout: 3))
     }
 
     func testEndingDemoNavigationReturnsToHome() throws {
         let app = XCUIApplication()
         app.launch()
 
+        reveal(app.buttons["更多"], in: app)
+        app.buttons["更多"].tap()
         let demo = app.buttons["demo-navigation-button"]
         XCTAssertTrue(demo.waitForExistence(timeout: 5))
+        reveal(demo, in: app)
         demo.tap()
 
         let end = app.buttons["结束导航"]
@@ -377,8 +398,10 @@ final class WaymateUITests: XCTestCase {
 
         let search = app.textFields["destination-search-field"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
-        XCTAssertTrue(search.isHittable)
         keepScreenshot(of: app, named: name)
+        reveal(search, in: app)
+        XCTAssertTrue(search.isHittable)
+        keepScreenshot(of: app, named: "\(name) — search reachable")
 
         // Keep the device controls reachable in every appearance/text-size
         // variant without asserting any particular Bluetooth state.
@@ -402,6 +425,54 @@ final class WaymateUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed)
         XCTAssertTrue(search.waitForExistence(timeout: 3))
         XCTAssertTrue(search.isHittable)
+    }
+
+    func testMediaIsAnExplicitPageWithUnavailableState() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--moto-ui-offline"]
+        app.launch()
+        let media = app.buttons["media-open-button"]
+        reveal(media, in: app)
+        media.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["media-sheet"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["媒体信息不可用"].exists)
+        keepScreenshot(of: app, named: "Waymate Media — unavailable")
+        app.buttons["media-done-button"].tap()
+        XCTAssertTrue(app.buttons["ride-start-button"].exists)
+    }
+
+    func testAuxiliarySheetsLightAndDarkVisualActions() {
+        let device = XCUIDevice.shared
+        let previous = device.appearance
+        defer { device.appearance = previous }
+        for appearance in [XCUIDevice.Appearance.light, .dark] {
+            device.appearance = appearance
+            let app = XCUIApplication()
+            app.launchArguments = ["--moto-ui-offline"]
+            app.launch()
+            device.appearance = appearance
+            let maps = app.buttons["map-downloads-button"]
+            reveal(maps, in: app)
+            maps.tap()
+            let done = app.buttons["map-downloads-done"]
+            XCTAssertTrue(done.waitForExistence(timeout: 3))
+            XCTAssertTrue(done.isHittable)
+            keepScreenshot(of: app, named: "Waymate maps sheet — \(appearance)")
+            done.tap()
+            let media = app.buttons["media-open-button"]
+            reveal(media, in: app)
+            media.tap()
+            XCTAssertTrue(app.buttons["media-done-button"].waitForExistence(timeout: 3))
+            keepScreenshot(of: app, named: "Waymate Media sheet — \(appearance)")
+            app.buttons["media-done-button"].tap()
+        }
+    }
+
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<6 {
+            if element.isHittable { return }
+            app.swipeUp()
+        }
     }
 
     private func keepScreenshot(of app: XCUIApplication, named name: String) {

@@ -91,6 +91,12 @@ final class AppModel: ObservableObject {
     private var liveRouteProvider: AmapGatewayRouteProvider
     private var placeProvider: AmapGatewayPlaceProvider
     private let mediaController = AppleMusicRemoteController()
+    @Published private(set) var mediaState: PhoneMediaState?
+
+    // Reuse the existing controller; no playback or presentation policy here.
+    func performMediaCommand(_ kind: UInt8) {
+        _ = mediaController.handleDeviceCommand(kind: kind)
+    }
     let surroundingMap: SurroundingMapStore
     @Published private(set) var mapGatewayBaseURL: URL
     @Published private(set) var isUpdatingGateway = false
@@ -136,6 +142,7 @@ final class AppModel: ObservableObject {
             }
         }
         mediaController.onStateChange = { [weak self] state in
+            self?.mediaState = state
             self?.bluetooth.sendMediaState(state)
         }
         searchLocation.onLocationChange = { [weak self] point in

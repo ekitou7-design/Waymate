@@ -16,6 +16,8 @@ struct ContentView: View {
     @State private var showsMapDownloads = false
     @State private var showsDataUse = false
     @State private var showsGatewaySettings = false
+    @State private var showsMedia = false
+    @State private var confirmsEndRide = false
 
     var body: some View {
         NavigationStack(path: navigationPath) {
@@ -44,6 +46,14 @@ struct ContentView: View {
                 destinationName: model.selectedPlace?.name
             )
         }
+        .sheet(isPresented: $showsMedia) { MediaView(model: model) }
+        .confirmationDialog("结束当前 Ride？", isPresented: $confirmsEndRide, titleVisibility: .visible) {
+            Button("结束 Ride", role: .destructive, action: model.stopRide)
+                .accessibilityIdentifier("ride-end-confirm")
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text(model.isNavigationActive ? "保存本次记录。导航会继续运行。" : "保存本次记录并返回首页。")
+        }
         .sheet(isPresented: $showsDataUse) { DataUseView() }
         .sheet(isPresented: $showsGatewaySettings) { GatewaySettingsView(model: model) }
     }
@@ -70,63 +80,89 @@ struct ContentView: View {
     // MARK: - Destination search
 
     private var homeScreen: some View {
-        List {
-            rideSection
-            if !model.isGatewayConfigured {
-                Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                HStack(spacing: 10) {
+                    WaymateLogo(size: 28)
+                    Text("waymate").font(.title2.weight(.semibold))
+                    Spacer()
+                }
+                if model.rideActive {
+                    rideSection
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(homeReadiness).font(.largeTitle.weight(.semibold))
+                            .accessibilityIdentifier("home-readiness")
+                        Text(homeReadinessDetail).font(.subheadline).foregroundStyle(.secondary)
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            HStack(spacing: 10) {
+                                Text("PHONE").font(.caption.weight(.medium))
+                                Circle().fill(WaymateTheme.ice).frame(width: 6, height: 6).accessibilityHidden(true)
+                                Capsule().fill(model.deviceReady ? WaymateTheme.ice : WaymateTheme.road)
+                                    .frame(height: 3).accessibilityHidden(true)
+                                Circle().fill(model.deviceReady ? WaymateTheme.ice : WaymateTheme.road)
+                                    .frame(width: 6, height: 6).accessibilityHidden(true)
+                                Text("DISPLAY").font(.caption.weight(.medium))
+                            }
+                        }
+                        DeviceStatusView(device: model.device)
+                    }
+                    rideSection
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    if model.rideActive {
+                        Button("NAVIGATE · 去哪儿？") { searchFocused = true }
+                            .font(.headline).frame(minHeight: 44)
+                            .accessibilityLabel("搜索目的地，开始导航")
+                            .accessibilityIdentifier("ride-navigate-button")
+                    } else {
+                        Text("去哪儿？").font(.title2.weight(.medium))
+                    }
+                    searchField.padding(.horizontal, 14).padding(.vertical, 6)
+                        .background(WaymateTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                    if model.searchLocationStatus == .permissionDenied {
+                        Button("前往设置开启定位", action: openSystemSettings)
+                    }
+                }
+                if !model.isGatewayConfigured {
                     Button { showsGatewaySettings = true } label: {
                         Label("设置导航网关", systemImage: "network")
-                    }
-                    .accessibilityIdentifier("gateway-setup-button")
-                } footer: {
-                    Text("填写你部署的网关地址后，就可以搜索地点和规划路线。")
+                    }.accessibilityIdentifier("gateway-setup-button")
+                    Text("填写网关地址后即可搜索地点和规划路线。")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
-            }
-            Section { searchField }
-            if !model.destinationQuery.isEmpty {
-                searchResultsSection
-            } else {
-                if model.recentPlaces.isEmpty {
-                    Section {
-                        ContentUnavailableView {
-                            Label {
-                                Text("选择目的地")
-                                    .lineLimit(nil)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            } icon: { Image(systemName: "map") }
-                        } description: {
-                            Text("搜索地点或地址，选好路线就出发。")
-                        }
-                        .padding(.vertical, 12)
-                    }
-                    .listRowBackground(Color.clear)
-                } else {
+                if !model.destinationQuery.isEmpty {
+                    searchResultsSection
+                } else if !model.recentPlaces.isEmpty {
                     recentPlacesSection
                 }
-                Section {
+                Divider()
+                VStack(alignment: .leading, spacing: 18) {
                     deviceSummaryButton
                     mapDownloadsButton
-                    demoButton
-                } footer: {
-                    Text("连接圆屏后，导航指引会自动同步。")
-                }
-                Section {
-                    Button { showsGatewaySettings = true } label: {
-                        Label("网关设置", systemImage: "network")
-                            .foregroundStyle(Color.primary)
+                    Button { showsMedia = true } label: { Label("Media · Apple Music", systemImage: "music.note").frame(minHeight: 44) }
+                        .accessibilityIdentifier("media-open-button")
+                    DisclosureGroup("更多") {
+                        VStack(alignment: .leading, spacing: 18) {
+                            demoButton
+                            Button { showsGatewaySettings = true } label: { Label("网关设置", systemImage: "network") }
+                                .accessibilityIdentifier("gateway-settings-button")
+                            Button { showsDataUse = true } label: { Label("隐私与数据", systemImage: "hand.raised") }
+                                .accessibilityIdentifier("privacy-data-button")
+                        }.padding(.top, 14)
                     }
-                    .accessibilityIdentifier("gateway-settings-button")
-                    Button { showsDataUse = true } label: {
-                        Label("隐私与数据", systemImage: "hand.raised")
-                            .foregroundStyle(Color.primary)
-                    }
-                    .accessibilityIdentifier("privacy-data-button")
-                }
+                }.font(.subheadline)
             }
+            .padding(24)
         }
-        .listStyle(.insetGrouped)
+        .buttonStyle(.plain)
         .scrollDismissesKeyboard(.interactively)
-        .navigationTitle("出发")
+        .background(WaymateTheme.background)
+        .environment(\.colorScheme, .dark)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarBackground(WaymateTheme.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .navigationTitle("")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showsGatewaySettings = true } label: { Image(systemName: "gearshape") }
@@ -139,6 +175,22 @@ struct ContentView: View {
                 Button("完成") { searchFocused = false }
             }
         }
+    }
+
+    private var homeReadiness: String {
+        if model.searchLocationStatus == .permissionDenied { return "LOCATION REQUIRED" }
+        if !model.isGatewayConfigured { return "SETUP REQUIRED" }
+        if !model.deviceReady { return "CONNECT DISPLAY" }
+        if model.searchLocationStatus != .available { return "WAITING FOR GPS" }
+        return "READY"
+    }
+
+    private var homeReadinessDetail: String {
+        if model.searchLocationStatus == .permissionDenied { return "允许定位以记录 Ride 和规划路线。" }
+        if !model.isGatewayConfigured { return "设置导航网关以搜索和规划路线；也可以直接开始 Ride。" }
+        if !model.deviceReady { return "连接车把圆屏；也可以先在 iPhone 上开始 Ride。" }
+        if model.searchLocationStatus != .available { return "圆屏已就绪，正在等待可用位置。" }
+        return "选择目的地，或直接开始 Ride。"
     }
 
     private var searchField: some View {
@@ -175,7 +227,8 @@ struct ContentView: View {
     }
 
     private var searchResultsSection: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("搜索结果").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             if model.isSearchingPlaces {
                 HStack(spacing: 12) {
                     ProgressView()
@@ -205,9 +258,6 @@ struct ContentView: View {
                     }
                 }
             }
-        } header: {
-            Text("搜索结果")
-        } footer: {
             VStack(alignment: .leading, spacing: 8) {
                 Text(model.searchScopeText)
                 if model.searchLocationStatus == .permissionDenied {
@@ -218,18 +268,17 @@ struct ContentView: View {
     }
 
     private var recentPlacesSection: some View {
-        Section {
-            ForEach(Array(model.recentPlaces.enumerated()), id: \.offset) { index, place in
-                Button { select(place) } label: { placeRow(place, symbol: "clock") }
-                    .accessibilityIdentifier("recent-place-\(index)")
-            }
-        } header: {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("最近搜索")
                 Spacer()
                 Button("清空", action: model.clearRecentPlaces)
                     .textCase(nil)
                     .accessibilityLabel("清空最近搜索")
+            }.font(.caption).foregroundStyle(.secondary)
+            ForEach(Array(model.recentPlaces.enumerated()), id: \.offset) { index, place in
+                Button { select(place) } label: { placeRow(place, symbol: "clock") }
+                    .accessibilityIdentifier("recent-place-\(index)")
             }
         }
     }
@@ -304,97 +353,65 @@ struct ContentView: View {
     }
 
     private var routePreviewScreen: some View {
-        List {
-            rideSection
-            if let place = model.selectedPlace {
-                Section {
-                    Label {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if let place = model.selectedPlace {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(place.name).font(.headline)
-                            Text(placeSubtitle(place))
-                                .font(.subheadline)
-                                .foregroundStyle(Color.secondary)
+                            Text("ROUTE PREVIEW").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            Text(place.name).font(.title2.weight(.semibold))
+                            Text("从我的位置出发 · \(placeSubtitle(place))").font(.subheadline).foregroundStyle(.secondary)
+                        }.padding(.horizontal, 24)
+                        if model.hasRoutePreview {
+                            RouteOverviewMap(candidates: model.routePreviewCandidates,
+                                             selectedID: model.selectedRoutePreviewID,
+                                             origin: model.routePreviewOrigin, destination: place.location)
+                                .frame(height: max(300, geometry.size.height * 0.52))
+                                .accessibilityIdentifier("route-preview-map")
+                                .accessibilityLabel("前往\(place.name)的路线全览")
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("选择路线").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                ForEach(model.routePreviewCandidates) { candidate in routeOptionRow(candidate) }
+                                Text("高德驾车路线 · 预计时间会随路况变化").font(.caption).foregroundStyle(.secondary)
+                                mapDownloadsButton
+                            }.padding(.horizontal, 24)
+                        } else if model.isPlanningRoutePreview {
+                            HStack(spacing: 14) { ProgressView(); Text("正在规划路线 · 获取当前位置与路况…") }
+                                .padding(24).accessibilityIdentifier("route-preview-loading")
+                        } else if let failure = model.routePreviewFailure {
+                            VStack(alignment: .leading, spacing: 14) {
+                                Text("无法规划路线").font(.title2)
+                                failureMessage(failure)
+                                if model.searchLocationStatus == .permissionDenied {
+                                    Button("前往设置", action: openSystemSettings)
+                                }
+                            }.padding(24)
                         }
-                        .fixedSize(horizontal: false, vertical: true)
-                    } icon: {
-                        Image(systemName: "mappin.circle.fill").foregroundStyle(WaymateTheme.accent)
-                    }
-                    .padding(.vertical, 5)
-                } header: {
-                    Label("从我的位置出发", systemImage: "location.fill").textCase(nil)
-                }
-
-                if model.isPlanningRoutePreview {
-                    Section {
-                        HStack(spacing: 14) {
-                            ProgressView()
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("正在规划路线")
-                                Text("获取当前位置与路况…")
-                                    .font(.subheadline)
-                                    .foregroundStyle(Color.secondary)
-                            }
-                        }
-                        .padding(.vertical, 12)
-                        .accessibilityIdentifier("route-preview-loading")
-                    }
-                } else if model.hasRoutePreview {
-                    Section {
-                        RouteOverviewMap(
-                            candidates: model.routePreviewCandidates,
-                            selectedID: model.selectedRoutePreviewID,
-                            origin: model.routePreviewOrigin,
-                            destination: place.location
-                        )
-                        .frame(height: dynamicTypeSize.isAccessibilitySize ? 220 : 270)
-                        .listRowInsets(EdgeInsets())
-                        .accessibilityIdentifier("route-preview-map")
-                        .accessibilityLabel("前往\(place.name)的路线全览")
-                    }
-                    Section {
-                        ForEach(model.routePreviewCandidates) { candidate in routeOptionRow(candidate) }
-                    } header: {
-                        Text("选择路线")
-                    } footer: {
-                        Text("高德驾车路线 · 预计时间会随路况变化")
-                    }
-                    Section { mapDownloadsButton }
-                } else if let failure = model.routePreviewFailure {
-                    Section {
-                        ContentUnavailableView {
-                            Label {
-                                Text("无法规划路线")
-                                    .lineLimit(nil)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            } icon: { Image(systemName: "exclamationmark.triangle") }
-                        } description: {
-                            Text(failure)
-                        } actions: {
-                            if model.searchLocationStatus == .permissionDenied {
-                                Button("前往设置", action: openSystemSettings)
-                            }
+                        if let failure = model.navigationFailure { failureMessage(failure).padding(.horizontal, 24) }
+                        if model.rideActive {
+                            VStack(alignment: .leading, spacing: 12) { rideSection }
+                                .padding(.horizontal, 24)
                         }
                     }
-                }
-                if let failure = model.navigationFailure {
-                    Section { failureMessage(failure) }
-                }
+                }.padding(.vertical, 20)
             }
         }
-        .listStyle(.insetGrouped)
+        .buttonStyle(.plain)
+        .background(WaymateTheme.background)
         .navigationTitle("路线")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("更换") {
-                    model.clearDestination()
-                    searchFocused = true
-                }
-                .accessibilityLabel("更换目的地")
-                .accessibilityIdentifier("destination-change-button")
+                Button("更换") { model.clearDestination(); searchFocused = true }
+                    .accessibilityLabel("更换目的地")
+                    .accessibilityIdentifier("destination-change-button")
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { navigationActionBar }
+        .environment(\.colorScheme, .dark)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarBackground(WaymateTheme.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
 
     private func routeOptionRow(_ candidate: RoutePreviewCandidate) -> some View {
@@ -429,7 +446,11 @@ struct ContentView: View {
                     .foregroundStyle(selected ? WaymateTheme.accent : Color(uiColor: .tertiaryLabel))
                     .accessibilityHidden(true)
             }
-            .padding(.vertical, 9)
+            .padding(16)
+            .background(selected ? WaymateTheme.ice.opacity(0.08) : Color.clear)
+            .overlay(alignment: .leading) {
+                if selected { Capsule().fill(WaymateTheme.ice).frame(width: 3).padding(.vertical, 10) }
+            }
             .contentShape(Rectangle())
         }
         .accessibilityIdentifier("route-option-\(candidate.ordinal)")
@@ -455,142 +476,93 @@ struct ContentView: View {
     // MARK: - Ride in progress
 
     private var activeNavigationScreen: some View {
-        List {
-            rideSection
-            Section {
-                VStack(spacing: 14) {
-                    Image(systemName: navigationSymbol)
-                        .font(.system(size: 36, weight: .medium))
-                        .foregroundStyle(model.navigationFailure == nil ? WaymateTheme.accent : WaymateTheme.warning)
-                        .frame(width: 76, height: 76)
-                        .background(WaymateTheme.accent.opacity(0.08), in: Circle())
-                        .accessibilityHidden(true)
-                    Text(navigationTitle)
-                        .font(.title2.weight(.semibold))
-                        .multilineTextAlignment(.center)
-                    Text(navigationDetail)
-                        .font(.subheadline)
-                        .foregroundStyle(Color.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-            }
-            .listRowBackground(Color.clear)
-            Section {
-                Label {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(model.isDemoActive ? "演示目的地" : "目的地")
-                            .font(.subheadline)
-                            .foregroundStyle(Color.secondary)
-                        Text(model.activeDestinationName).font(.headline)
-                    }
-                } icon: {
-                    Image(systemName: "flag.checkered").foregroundStyle(WaymateTheme.accent)
-                }
-                .padding(.vertical, 6)
-                if dynamicTypeSize.isAccessibilitySize {
-                    rideMetric("剩余时间", value: remainingDuration)
-                    rideMetric("剩余路程", value: remainingDistance)
-                } else {
-                    HStack(spacing: 24) {
-                        rideMetric("剩余时间", value: remainingDuration)
-                        rideMetric("剩余路程", value: remainingDistance)
-                    }
-                }
-            }
-            Section("导航状态") {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                ActiveNavigationView(state: model.navigationComponentState, failure: model.navigationFailure,
+                                     destination: model.activeDestinationName, duration: remainingDuration,
+                                     distance: remainingDistance, rideActive: model.rideActive,
+                                     ridePaused: model.rideSessionState == .paused, demo: model.isDemoActive)
                 deviceSummaryButton
-                statusRow("手机定位", symbol: "location", value: locationStatus,
-                          color: model.navigation.hasUsableFix ? WaymateTheme.connected : .secondary)
-                statusRow("路况", symbol: "car.side", value: trafficStatus, color: .secondary)
-                SurroundingMapStatusRow(store: model.surroundingMap)
-                Button("管理离线地图") { showsMapDownloads = true }
-            }
-            if model.isDemoActive {
-                Section {
-                    Label("演示中的位置与行驶过程为模拟数据。", systemImage: "info.circle")
-                        .font(.footnote)
-                        .foregroundStyle(Color.secondary)
-                } footer: {
-                    Text("道路数据 © OpenStreetMap contributors")
+                VStack(alignment: .leading, spacing: 10) {
+                    statusRow("手机定位", symbol: "location", value: locationStatus,
+                              color: model.navigation.hasUsableFix && !model.navigationComponentState.locationValidity.isStale ? WaymateTheme.connected : WaymateTheme.warning)
+                    statusRow("路况", symbol: "car.side", value: trafficStatus, color: .secondary)
+                    SurroundingMapStatusRow(store: model.surroundingMap)
+                    mapDownloadsButton
+                    Button { showsMedia = true } label: { Label("Media · Apple Music", systemImage: "music.note").frame(minHeight: 44) }
+                        .accessibilityIdentifier("media-open-button")
+                }.font(.subheadline)
+                Divider()
+                rideSection
+                if model.isDemoActive {
+                    Text("道路数据 © OpenStreetMap contributors").font(.footnote).foregroundStyle(.secondary)
                 }
-            }
+            }.padding(24)
         }
-        .listStyle(.insetGrouped)
+        .buttonStyle(.plain)
+        .background(WaymateTheme.background)
         .navigationTitle(model.isDemoActive ? "演示导航" : "导航中")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { deviceToolbarButton }
-        }
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { deviceToolbarButton } }
         .safeAreaInset(edge: .bottom, spacing: 0) { navigationActionBar }
+        .environment(\.colorScheme, .dark)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarBackground(WaymateTheme.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
 
-    // Same read-only session projection on home, preview and navigation.
     private var rideSection: some View {
-        Section("Ride") {
+        VStack(alignment: .leading, spacing: 18) {
             if model.rideActive {
-                Text(model.rideSessionState == .paused ? "Ride 已暂停" : "Ride 正在进行")
+                let paused = model.rideSessionState == .paused
+                Text(paused ? "RIDE PAUSED" : "RIDE")
+                    .font(.title.weight(.semibold))
+                    .foregroundStyle(paused ? WaymateTheme.warning : WaymateTheme.accent)
+                Text(paused ? "Ride 已暂停" : "Ride 正在进行")
+                    .font(.subheadline).foregroundStyle(.secondary)
                     .accessibilityIdentifier("ride-status")
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    VStack(alignment: .leading, spacing: 6) {
-                        rideValue("骑行时间", value: rideDuration(model.rideElapsedTime), id: "ride-elapsed-time")
-                        rideValue("移动时间", value: rideDuration(model.rideMovingTime), id: "ride-moving-time")
-                        rideValue("距离", value: String(format: "%.2f km", model.rideDistance / 1_000), id: "ride-distance")
-                        rideValue("当前速度", value: model.rideCurrentSpeed.map { String(format: "%.1f km/h", $0 * 3.6) } ?? "--", id: "ride-current-speed")
-                    }
-                    .monospacedDigit()
+                RideMetricsView(model: model, compact: model.selectedPlace != nil || model.isNavigationActive)
+                if !model.isNavigationActive && model.selectedPlace == nil {
+                    DeviceStatusView(device: model.device)
                 }
-                if model.rideSessionState == .active {
-                    Button("PAUSE", action: model.pauseRide)
-                        .accessibilityIdentifier("ride-pause-button")
-                } else {
-                    Button("RESUME", action: model.resumeRide)
-                        .accessibilityIdentifier("ride-resume-button")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 24) { rideControls }
+                    VStack(alignment: .leading, spacing: 18) { rideControls }
                 }
-                Button("END RIDE", role: .destructive, action: model.stopRide)
-                    .accessibilityIdentifier("ride-end-button")
             } else {
                 Button("START RIDE", action: model.startRide)
+                    .buttonStyle(WaymatePrimaryButtonStyle())
+                    .accessibilityLabel("开始记录 Ride")
                     .accessibilityIdentifier("ride-start-button")
                 if model.lastRideRecord != nil {
-                    Text("最近一次 Ride 已结束")
+                    Text("最近一次 Ride 已结束").font(.caption).foregroundStyle(.secondary)
                         .accessibilityIdentifier("ride-record-ready")
                 }
             }
             if let failure = model.rideFailure {
-                failureMessage(failure)
-                    .accessibilityIdentifier("ride-error")
+                failureMessage(failure).accessibilityIdentifier("ride-error")
+                Button("检查定位权限", action: openSystemSettings)
             }
         }
     }
 
-    private func rideValue(_ title: String, value: String, id: String) -> some View {
-        LabeledContent(title, value: value)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(title)
-            .accessibilityValue(value)
-            .accessibilityIdentifier(id)
-    }
-
-    private func rideDuration(_ seconds: TimeInterval) -> String {
-        let total = Int(max(0, seconds))
-        return String(format: "%02d:%02d:%02d", total / 3_600, total / 60 % 60, total % 60)
-    }
-
-    private func rideMetric(_ title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(value)
-                .font(.title.weight(.semibold))
-                .monospacedDigit()
-                .fixedSize(horizontal: false, vertical: true)
-            Text(title).font(.subheadline).foregroundStyle(Color.secondary)
+    @ViewBuilder private var rideControls: some View {
+        if model.rideSessionState == .active {
+            Button("PAUSE", action: model.pauseRide)
+                .font(.headline).frame(minHeight: 44)
+                .accessibilityLabel("暂停 Ride 记录")
+                .accessibilityIdentifier("ride-pause-button")
+        } else {
+            Button("RESUME", action: model.resumeRide)
+                .font(.headline).frame(minHeight: 44)
+                .accessibilityLabel("继续 Ride 记录")
+                .accessibilityIdentifier("ride-resume-button")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 10)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title)，\(value)")
+        Button("END RIDE", role: .destructive) { confirmsEndRide = true }
+            .font(.headline).frame(minHeight: 44)
+            .foregroundStyle(WaymateTheme.error)
+            .accessibilityLabel("结束 Ride，确认后保存记录")
+            .accessibilityIdentifier("ride-end-button")
     }
 
     private var navigationActionBar: some View {
@@ -602,24 +574,21 @@ struct ContentView: View {
                     } else {
                         Image(systemName: model.isNavigationActive ? "stop.fill" : "location.fill")
                     }
-                    Text(model.primaryActionTitle).fixedSize(horizontal: false, vertical: true)
+                    Text(model.isNavigationActive ? "END NAV" : (model.canStartNavigation ? "START NAV" : model.primaryActionTitle)).fixedSize(horizontal: false, vertical: true)
                 }
                 .font(.headline)
                 .frame(maxWidth: .infinity, minHeight: 34)
                 .padding(.vertical, 4)
             }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.roundedRectangle(radius: 16))
-            .controlSize(.large)
-            .tint(model.isNavigationActive ? WaymateTheme.error : WaymateTheme.accent)
-            .foregroundStyle(model.isNavigationActive ? WaymateTheme.onError : WaymateTheme.onAccent)
+            .buttonStyle(WaymatePrimaryButtonStyle(destructive: model.isNavigationActive))
             .disabled(!model.isNavigationActive && (model.selectedPlace == nil || model.isPlanningRoutePreview))
+            .accessibilityLabel(model.primaryActionTitle)
             .accessibilityIdentifier("primary-navigation-action")
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 8)
-        .background(.bar)
+        .background(WaymateTheme.background)
     }
 
     // MARK: - Device sheet
@@ -628,7 +597,7 @@ struct ContentView: View {
         Button {
             searchFocused = false
             showsDeviceDetails = true
-        } label: { Image(systemName: "circle.circle") }
+        } label: { Image(systemName: "circle.circle").foregroundStyle(WaymateTheme.ice) }
         .accessibilityLabel("我的圆屏")
         .accessibilityValue(deviceStatus)
         .accessibilityIdentifier("device-details-button")
@@ -639,29 +608,8 @@ struct ContentView: View {
             searchFocused = false
             showsDeviceDetails = true
         } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "circle.circle")
-                    .font(.title3)
-                    .foregroundStyle(WaymateTheme.accent)
-                    .frame(width: 24)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("我的圆屏").foregroundStyle(Color.primary)
-                    Text(deviceStatus).font(.subheadline).foregroundStyle(Color.secondary)
-                }
-                Spacer(minLength: 4)
-                if model.deviceReady {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(WaymateTheme.connected)
-                        .accessibilityHidden(true)
-                }
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
-                    .accessibilityHidden(true)
-            }
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
+            DeviceStatusView(device: model.device)
+                .padding(.vertical, 6).contentShape(Rectangle())
         }
         .accessibilityIdentifier("device-summary-button")
     }
@@ -696,6 +644,15 @@ struct ContentView: View {
                 } footer: {
                     Text("圆屏保持开机并靠近 iPhone。连接成功后，当前导航会自动同步。")
                 }
+                Section {
+                    DisclosureGroup("连接诊断") {
+                        LabeledContent("协商协议", value: model.device.negotiatedProtocol)
+                        LabeledContent("最近设备指令", value: model.device.lastCommandID.map(String.init) ?? "--")
+                        if case let .failed(message) = model.device.connection {
+                            Text(message).font(.footnote).textSelection(.enabled)
+                        }
+                    }
+                }
                 Section("定位") {
                     statusRow("搜索位置", symbol: "location", value: searchLocationStatus, color: .secondary)
                     if model.searchLocationStatus == .permissionDenied {
@@ -703,6 +660,9 @@ struct ContentView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(WaymateTheme.background)
+            .tint(WaymateTheme.accent)
             .navigationTitle("我的圆屏")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -808,39 +768,6 @@ struct ContentView: View {
         }
     }
 
-    private var navigationTitle: String {
-        if model.navigationFailure != nil { return "导航需要处理" }
-        switch model.navigation.stateName {
-        case "acquiring": return "正在获取位置"
-        case "planning": return "正在规划路线"
-        case "rerouting": return "正在重新规划"
-        case "arrived": return "已到达目的地"
-        case "navigating": return model.isDemoActive ? "正在演示" : "正在导航"
-        default: return "准备出发"
-        }
-    }
-
-    private var navigationDetail: String {
-        if let failure = model.navigationFailure { return failure }
-        if model.navigation.stateName == "navigating" {
-            if model.isDemoActive { return "预览行驶过程与圆屏上的导航指引。" }
-            return model.deviceReady
-                ? "圆屏已连接，手机可锁屏收好。"
-                : "圆屏连接后，导航指引会自动同步。"
-        }
-        return model.phaseDetail
-    }
-
-    private var navigationSymbol: String {
-        if model.navigationFailure != nil { return "exclamationmark.triangle" }
-        switch model.navigation.stateName {
-        case "arrived": return "flag.checkered"
-        case "rerouting": return "arrow.triangle.2.circlepath"
-        case "navigating": return "location.north.fill"
-        default: return "location.magnifyingglass"
-        }
-    }
-
     private var hasNavigationEstimate: Bool {
         model.navigationComponentState.isNavigationValid
     }
@@ -855,13 +782,19 @@ struct ContentView: View {
 
     private var locationStatus: String {
         if model.isDemoActive { return "演示位置" }
+        if model.navigationComponentState.locationValidity.isStale { return "位置已过期" }
         return model.navigation.hasUsableFix ? "已获取" : "获取中"
     }
 
     private var trafficStatus: String {
         if model.isDemoActive { return "演示中" }
         if model.navigation.trafficRequestInFlight { return "更新中" }
-        return model.navigation.networkName == "online" ? "在线" : "离线"
+        switch model.navigation.networkName {
+        case "online": return "在线"
+        case "connecting": return "正在连接"
+        case "offline": return "离线"
+        default: return "--"
+        }
     }
 
     private func trafficTint(_ candidate: RoutePreviewCandidate) -> Color {

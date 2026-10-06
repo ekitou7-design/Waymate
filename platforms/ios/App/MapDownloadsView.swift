@@ -85,6 +85,7 @@ struct MapDownloadsView: View {
     let gatewayBaseURL: URL
     let route: [GCJ02Point]
     let destinationName: String?
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @State private var planningRoute = false
     @State private var planningError: String?
@@ -98,7 +99,7 @@ struct MapDownloadsView: View {
                             Text("自动加载周边地图")
                             Text(store.statusText).font(.subheadline).foregroundStyle(.secondary)
                         }
-                    } icon: { Image(systemName: "network").foregroundStyle(.blue) }
+                    } icon: { Image(systemName: "network").foregroundStyle(WaymateTheme.accent) }
                 } footer: {
                     Text("骑行时自动加载圆屏周边的道路和建筑。网络不可用时，使用已下载的地图。")
                 }
@@ -140,7 +141,7 @@ struct MapDownloadsView: View {
                                 Text(pack.name).font(.headline)
                                 Spacer()
                                 Image(systemName: pack.isComplete ? "checkmark.circle.fill" : "pause.circle")
-                                    .foregroundStyle(pack.isComplete ? Color.green : Color.secondary)
+                                    .foregroundStyle(pack.isComplete ? WaymateTheme.connected : Color.secondary)
                             }
                             Text(pack.detail).font(.subheadline).foregroundStyle(.secondary)
                             Text("\(ByteCountFormatter.string(fromByteCount: pack.byteCount, countStyle: .file)) · \(pack.isComplete ? "已下载" : "尚未下载完成")")
@@ -170,15 +171,21 @@ struct MapDownloadsView: View {
                 } footer: { Text("建筑和道路的完整程度取决于当地地图数据。") }
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(WaymateTheme.background)
             .navigationTitle("地图")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }.accessibilityIdentifier("map-downloads-done")
+                    Button { dismiss() } label: {
+                        Text("完成").foregroundStyle(WaymateTheme.accent)
+                    }.accessibilityIdentifier("map-downloads-done")
                 }
             }
             .accessibilityIdentifier("map-downloads-sheet")
         }
+        .tint(WaymateTheme.accent)
+        .toolbarColorScheme(colorScheme, for: .navigationBar)
     }
 
     private func downloadRoute() {
@@ -233,6 +240,9 @@ private struct MapCitySearchView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(WaymateTheme.background)
+        .tint(WaymateTheme.accent)
         .navigationTitle("下载城市地图")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search.query, prompt: "搜索城市或区县")
@@ -251,8 +261,8 @@ private struct MapCityDownloadView: View {
             Section {
                 Map(initialPosition: .region(region)) {
                     MapPolygon(coordinates: corners)
-                        .foregroundStyle(.blue.opacity(0.1))
-                        .stroke(.blue, lineWidth: 2)
+                        .foregroundStyle(WaymateTheme.accent.opacity(0.1))
+                        .stroke(WaymateTheme.accent, lineWidth: 2)
                 }
                 .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
                 .frame(height: 260)
@@ -260,7 +270,7 @@ private struct MapCityDownloadView: View {
                 .accessibilityLabel("\(city.name)离线地图下载范围")
                 LabeledContent("下载区域", value: city.detail)
             } footer: {
-                Text("蓝框内的道路和建筑将保存在手机。范围覆盖所选城市或区县，边缘可能包括部分相邻地区。")
+                Text("标示范围内的道路和建筑将保存在手机。范围覆盖所选城市或区县，边缘可能包括部分相邻地区。")
             }
             Section {
                 if let errorMessage { Text(errorMessage).foregroundStyle(.secondary) }
@@ -274,6 +284,9 @@ private struct MapCityDownloadView: View {
             }
             downloadStatus(store)
         }
+        .scrollContentBackground(.hidden)
+        .background(WaymateTheme.background)
+        .tint(WaymateTheme.accent)
         .navigationTitle(city.name)
         .navigationBarTitleDisplayMode(.inline)
         .task {

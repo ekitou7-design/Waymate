@@ -138,7 +138,7 @@ struct RouteOverviewMap: UIViewRepresentable {
             traits: UITraitCollection
         ) {
             let isSelected = polyline.title == selectedID
-            let color: UIColor = isSelected ? .systemBlue : .systemGray
+            let color: UIColor = isSelected ? UIColor(WaymateTheme.accent) : UIColor(WaymateTheme.road)
             renderer.strokeColor = color.resolvedColor(with: traits)
             renderer.lineWidth = isSelected ? 7 : 5
             renderer.lineCap = .round
@@ -152,9 +152,9 @@ struct RouteOverviewMap: UIViewRepresentable {
                 ?? MKMarkerAnnotationView(annotation: point, reuseIdentifier: identifier)
             view.annotation = point
             let isStart = point.subtitle == "moto-start"
-            view.markerTintColor = isStart ? .systemBlue : .systemRed
+            view.markerTintColor = isStart ? UIColor(WaymateTheme.accent) : UIColor(WaymateTheme.error)
             view.glyphImage = UIImage(systemName: isStart ? "location.fill" : "flag.fill")
-            view.glyphTintColor = .white
+            view.glyphTintColor = UIColor(WaymateTheme.onAccent)
             view.subtitleVisibility = .hidden
             view.displayPriority = .required
             return view
