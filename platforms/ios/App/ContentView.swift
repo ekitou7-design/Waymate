@@ -27,7 +27,7 @@ struct ContentView: View {
                     }
                 }
         }
-        .tint(.blue)
+        .tint(WaymateTheme.accent)
         .onChange(of: model.destinationQuery) { _, _ in model.destinationQueryDidChange() }
         .onChange(of: model.selectedPlace) { _, place in
             if place != nil { searchFocused = false }
@@ -238,7 +238,7 @@ struct ContentView: View {
         HStack(spacing: 14) {
             Image(systemName: symbol)
                 .font(.title3)
-                .foregroundStyle(symbol == "clock" ? Color.secondary : .blue)
+                .foregroundStyle(symbol == "clock" ? Color.secondary : WaymateTheme.accent)
                 .frame(width: 28)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
@@ -280,7 +280,7 @@ struct ContentView: View {
                         .foregroundStyle(Color.secondary)
                 }
             } icon: {
-                Image(systemName: "play.circle").foregroundStyle(.blue)
+                Image(systemName: "play.circle").foregroundStyle(WaymateTheme.accent)
             }
             .padding(.vertical, 5)
         }
@@ -297,7 +297,7 @@ struct ContentView: View {
                     Text("自动加载周边，也能提前保存城市和沿途地图")
                         .font(.subheadline).foregroundStyle(Color.secondary)
                 }
-            } icon: { Image(systemName: "map").foregroundStyle(.blue) }
+            } icon: { Image(systemName: "map").foregroundStyle(WaymateTheme.accent) }
             .padding(.vertical, 5)
         }
         .accessibilityIdentifier("map-downloads-button")
@@ -317,7 +317,7 @@ struct ContentView: View {
                         }
                         .fixedSize(horizontal: false, vertical: true)
                     } icon: {
-                        Image(systemName: "mappin.circle.fill").foregroundStyle(.red)
+                        Image(systemName: "mappin.circle.fill").foregroundStyle(WaymateTheme.accent)
                     }
                     .padding(.vertical, 5)
                 } header: {
@@ -408,7 +408,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(candidate.title)
                         .font(.subheadline)
-                        .foregroundStyle(selected ? Color.blue : .secondary)
+                        .foregroundStyle(selected ? WaymateTheme.accent : .secondary)
                     ViewThatFits(in: .horizontal) {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             routeDuration(candidate)
@@ -426,7 +426,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
-                    .foregroundStyle(selected ? Color.blue : Color(uiColor: .tertiaryLabel))
+                    .foregroundStyle(selected ? WaymateTheme.accent : Color(uiColor: .tertiaryLabel))
                     .accessibilityHidden(true)
             }
             .padding(.vertical, 9)
@@ -461,9 +461,9 @@ struct ContentView: View {
                 VStack(spacing: 14) {
                     Image(systemName: navigationSymbol)
                         .font(.system(size: 36, weight: .medium))
-                        .foregroundStyle(model.navigationFailure == nil ? Color.blue : .orange)
+                        .foregroundStyle(model.navigationFailure == nil ? WaymateTheme.accent : WaymateTheme.warning)
                         .frame(width: 76, height: 76)
-                        .background(Color.blue.opacity(0.08), in: Circle())
+                        .background(WaymateTheme.accent.opacity(0.08), in: Circle())
                         .accessibilityHidden(true)
                     Text(navigationTitle)
                         .font(.title2.weight(.semibold))
@@ -487,7 +487,7 @@ struct ContentView: View {
                         Text(model.activeDestinationName).font(.headline)
                     }
                 } icon: {
-                    Image(systemName: "flag.checkered").foregroundStyle(.blue)
+                    Image(systemName: "flag.checkered").foregroundStyle(WaymateTheme.accent)
                 }
                 .padding(.vertical, 6)
                 if dynamicTypeSize.isAccessibilitySize {
@@ -503,7 +503,7 @@ struct ContentView: View {
             Section("导航状态") {
                 deviceSummaryButton
                 statusRow("手机定位", symbol: "location", value: locationStatus,
-                          color: model.navigation.hasUsableFix ? .green : .secondary)
+                          color: model.navigation.hasUsableFix ? WaymateTheme.connected : .secondary)
                 statusRow("路况", symbol: "car.side", value: trafficStatus, color: .secondary)
                 SurroundingMapStatusRow(store: model.surroundingMap)
                 Button("管理离线地图") { showsMapDownloads = true }
@@ -598,7 +598,7 @@ struct ContentView: View {
             Button(action: model.toggleNavigation) {
                 HStack(spacing: 9) {
                     if model.isPlanningRoutePreview {
-                        ProgressView().tint(.white)
+                        ProgressView().tint(model.isNavigationActive ? WaymateTheme.onError : WaymateTheme.onAccent)
                     } else {
                         Image(systemName: model.isNavigationActive ? "stop.fill" : "location.fill")
                     }
@@ -611,7 +611,8 @@ struct ContentView: View {
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.roundedRectangle(radius: 16))
             .controlSize(.large)
-            .tint(model.isNavigationActive ? .red : .blue)
+            .tint(model.isNavigationActive ? WaymateTheme.error : WaymateTheme.accent)
+            .foregroundStyle(model.isNavigationActive ? WaymateTheme.onError : WaymateTheme.onAccent)
             .disabled(!model.isNavigationActive && (model.selectedPlace == nil || model.isPlanningRoutePreview))
             .accessibilityIdentifier("primary-navigation-action")
         }
@@ -641,7 +642,7 @@ struct ContentView: View {
             HStack(spacing: 14) {
                 Image(systemName: "circle.circle")
                     .font(.title3)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(WaymateTheme.accent)
                     .frame(width: 24)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
@@ -651,7 +652,7 @@ struct ContentView: View {
                 Spacer(minLength: 4)
                 if model.deviceReady {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(WaymateTheme.connected)
                         .accessibilityHidden(true)
                 }
                 Image(systemName: "chevron.right")
@@ -672,7 +673,7 @@ struct ContentView: View {
                     VStack(spacing: 12) {
                         Image(systemName: "location.north.circle")
                             .font(.system(size: 64, weight: .ultraLight))
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(WaymateTheme.accent)
                             .accessibilityHidden(true)
                         Text(deviceName).font(.title2.weight(.semibold))
                         Text(deviceDetail)
@@ -686,7 +687,7 @@ struct ContentView: View {
                 .listRowBackground(Color.clear)
                 Section {
                     statusRow("连接状态", symbol: "antenna.radiowaves.left.and.right", value: deviceStatus,
-                              color: model.deviceReady ? .green : .secondary)
+                              color: model.deviceReady ? WaymateTheme.connected : .secondary)
                     Button(connectionActionTitle, action: model.toggleDeviceConnection)
                         .accessibilityIdentifier("device-connection-action")
                     if case .bluetoothUnavailable = model.device.connection {
@@ -865,9 +866,9 @@ struct ContentView: View {
 
     private func trafficTint(_ candidate: RoutePreviewCandidate) -> Color {
         switch candidate.trafficSummary {
-        case "拥堵较多": return .red
-        case "部分路段缓行": return .orange
-        case "路况顺畅": return .green
+        case "拥堵较多": return WaymateTheme.error
+        case "部分路段缓行": return WaymateTheme.warning
+        case "路况顺畅": return WaymateTheme.connected
         default: return .secondary
         }
     }
