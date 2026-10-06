@@ -333,6 +333,17 @@ void NavPresenter::update(const NavSnapshot& snapshot) {
       rounded_saturated<std::uint32_t>(snapshot.remaining_distance_m);
   ui_state_.remaining_time_s = snapshot.remaining_duration_s;
   ui_state_.route_progress_percent = progress_percent(snapshot);
+  ui_state_.speed_available = snapshot.has_usable_fix && !snapshot.gnss_stale &&
+      std::isfinite(snapshot.speed_mps) && snapshot.speed_mps >= 0.0F;
+  ui_state_.gnss_stale = snapshot.gnss_stale ? 1 : 0;
+  ui_state_.off_route = snapshot.off_route ? 1 : 0;
+  ui_state_.has_next_maneuver = snapshot.has_next_maneuver &&
+      snapshot.next_maneuver.type != ManeuverType::Unknown;
+  // BLE v1 has no independent course validity flag. Conservatively hide the
+  // compass below the existing fusion anchor speed; never claim true north.
+  ui_state_.heading_available = snapshot.has_usable_fix && !snapshot.gnss_stale &&
+      std::isfinite(snapshot.heading_deg) && std::isfinite(snapshot.speed_mps) &&
+      snapshot.speed_mps >= 1.5F;
   ui_state_.gps_accuracy_m =
       snapshot.has_usable_fix
           ? rounded_saturated<std::uint8_t>(snapshot.horizontal_accuracy_m)

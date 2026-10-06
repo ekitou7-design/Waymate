@@ -116,6 +116,12 @@ typedef struct {
     uint32_t remaining_distance_m;
     uint32_t remaining_time_s;
     uint8_t route_progress_percent;
+    /* Read-only presentation validity; never serialized into BLE packets. */
+    uint8_t gnss_stale;
+    uint8_t off_route;
+    uint8_t has_next_maneuver;
+    uint8_t heading_available;
+    uint8_t speed_available;
     uint8_t gps_accuracy_m;
     uint8_t online;
     uint8_t has_destination;

@@ -10,6 +10,15 @@ endif()
 
 add_library(moto_nav_ui STATIC
     assets/moto_font_nav_16.c
+    assets/moto_font_inter_medium_16.c
+    assets/moto_font_inter_medium_20.c
+    assets/moto_font_inter_semibold_28.c
+    assets/moto_font_inter_semibold_32.c
+    assets/moto_font_inter_semibold_36.c
+    assets/moto_font_inter_semibold_56.c
+    assets/moto_font_inter_semibold_96.c
+    assets/moto_font_cjk_16.c
+    assets/moto_font_cjk_28.c
     src/moto_nav_ui.cpp
 )
 

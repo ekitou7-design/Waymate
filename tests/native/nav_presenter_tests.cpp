@@ -480,7 +480,36 @@ void test_apply_to_lvgl_uses_last_owned_state() {
 
 }  // namespace
 
+void test_stage_c_validity_is_only_a_display_projection() {
+  moto::nav::NavPresenter presenter;
+  moto::nav::NavSnapshot snapshot;
+  snapshot.has_usable_fix = true;
+  snapshot.gnss_stale = false;
+  snapshot.horizontal_accuracy_m = 5;
+  snapshot.speed_mps = 8;
+  snapshot.heading_deg = 45;
+  snapshot.off_route = true;
+  presenter.update(snapshot);
+  CHECK(presenter.ui_state().speed_available == 1);
+  CHECK(presenter.ui_state().heading_available == 1);
+  CHECK(presenter.ui_state().off_route == 1);
+  snapshot.gnss_stale = true;
+  presenter.update(snapshot);
+  CHECK(presenter.ui_state().gnss_stale == 1);
+  CHECK(presenter.ui_state().speed_available == 0);
+  CHECK(presenter.ui_state().heading_available == 0);
+  snapshot.gnss_stale = false;
+  snapshot.speed_mps = 0;
+  presenter.update(snapshot);
+  CHECK(presenter.ui_state().speed_available == 1); // Real zero is available.
+  CHECK(presenter.ui_state().heading_available == 0); // No precision north at rest.
+  snapshot.speed_mps = -1;
+  presenter.update(snapshot);
+  CHECK(presenter.ui_state().speed_available == 0);
+}
+
 int main() {
+  test_stage_c_validity_is_only_a_display_projection();
   test_all_navigation_and_network_states();
   test_display_pages_map_without_changing_navigation_mode();
   test_all_maneuvers();
