@@ -8,7 +8,7 @@ enum RideSessionState: Equatable, Sendable {
 
 /// WGS84 observations, never route-matched coordinates. Segment boundaries must
 /// remain separate when a future map/export consumer draws the track.
-struct RideTrackPoint: Equatable, Sendable {
+struct RideTrackPoint: Codable, Equatable, Sendable {
     let latitude: Double
     let longitude: Double
     let timestamp: Date
@@ -17,7 +17,9 @@ struct RideTrackPoint: Equatable, Sendable {
     let segment: Int
 }
 
-struct RideRecord: Equatable, Sendable {
+struct RideRecord: Codable, Equatable, Sendable, Identifiable {
+    let id: UUID
+    var name: String?
     let startedAt: Date
     let endedAt: Date
     /// Active duration: explicit pauses excluded, stationary time included.
@@ -26,6 +28,20 @@ struct RideRecord: Equatable, Sendable {
     let distance: Double
     let maxSpeed: Double?
     let track: [RideTrackPoint]
+
+    init(id: UUID = UUID(), name: String? = nil, startedAt: Date, endedAt: Date,
+         elapsedTime: TimeInterval, movingTime: TimeInterval, distance: Double,
+         maxSpeed: Double?, track: [RideTrackPoint]) {
+        self.id = id
+        self.name = name
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.elapsedTime = elapsedTime
+        self.movingTime = movingTime
+        self.distance = distance
+        self.maxSpeed = maxSpeed
+        self.track = track
+    }
 
     var averageSpeed: Double? { movingTime > 0 ? distance / movingTime : nil }
 }

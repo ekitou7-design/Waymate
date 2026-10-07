@@ -27,6 +27,7 @@ final class RideProductionWiringTests: XCTestCase {
         XCTAssertEqual(model.rideSessionState, .active)
         now = start.addingTimeInterval(13)
         model.stopRide(); model.stopRide()
+        await model.waitForRidePersistence()
         let record = try XCTUnwrap(model.lastRideRecord)
         XCTAssertEqual(record.elapsedTime, 5)
         XCTAssertEqual(record, model.rideRecord)
@@ -36,6 +37,7 @@ final class RideProductionWiringTests: XCTestCase {
         XCTAssertNil(model.rideRecord)
         XCTAssertEqual(model.lastRideRecord, record)
         model.stopRide()
+        await model.waitForRidePersistence()
     }
 
     func testActiveAndPausedNavigationStartsDoNotReplaceOrResumeRide() async {
@@ -55,6 +57,7 @@ final class RideProductionWiringTests: XCTestCase {
             model.stopNavigation()
             XCTAssertTrue(model.rideActive)
             model.stopRide()
+            await model.waitForRidePersistence()
         }
     }
 
@@ -92,6 +95,7 @@ final class RideProductionWiringTests: XCTestCase {
         XCTAssertEqual(model.navigationFailure, "GPS denied")
         XCTAssertNil(model.lastRideRecord)
         model.stopNavigation(); model.stopRide()
+        await model.waitForRidePersistence()
     }
 
     func testMismatchedInitialResponseRollsBackAutomaticRide() async {
@@ -120,6 +124,7 @@ final class RideProductionWiringTests: XCTestCase {
                 XCTAssertTrue(model.rideTrack.isEmpty)
             }
             model.stopNavigation(); model.stopRide()
+            await model.waitForRidePersistence()
         }
     }
 
@@ -147,6 +152,7 @@ final class RideProductionWiringTests: XCTestCase {
         XCTAssertTrue(model.rideActive)
         XCTAssertEqual(source.stops, 0)
         model.stopRide()
+        await model.waitForRidePersistence()
         XCTAssertNotNil(model.lastRideRecord)
         XCTAssertEqual(source.stops, 1)
     }
@@ -156,6 +162,7 @@ final class RideProductionWiringTests: XCTestCase {
         let model = AppModel(startsServices: false, locationSource: source)
         model.beginLiveNavigation(destination: destination, routeProvider: ProductionRideRoute())
         model.stopRide(); model.stopRide()
+        await model.waitForRidePersistence()
         XCTAssertFalse(model.rideActive)
         XCTAssertNotNil(model.lastRideRecord)
         XCTAssertTrue(model.isNavigationActive)
@@ -170,6 +177,7 @@ final class RideProductionWiringTests: XCTestCase {
         let source = ProductionRideSource()
         let model = AppModel(startsServices: false, locationSource: source)
         model.startRide(); model.stopRide()
+        await model.waitForRidePersistence()
         let previous = try XCTUnwrap(model.lastRideRecord)
         model.beginLiveNavigation(destination: destination, routeProvider: ProductionRideRoute(fails: true))
         source.emit()

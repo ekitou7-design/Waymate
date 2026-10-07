@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var showsGatewaySettings = false
     @State private var showsMedia = false
     @State private var confirmsEndRide = false
+    @State private var showsRideHistory = false
 
     var body: some View {
         NavigationStack(path: navigationPath) {
@@ -46,13 +47,28 @@ struct ContentView: View {
                 destinationName: model.selectedPlace?.name
             )
         }
+        .sheet(isPresented: $showsRideHistory) { RideHistoryView(model: model) }
+        .sheet(isPresented: Binding(get: { model.rideSummaryID != nil },
+                                    set: { if !$0 { model.rideSummaryID = nil } })) {
+            if let id = model.rideSummaryID {
+                NavigationStack {
+                    RideDetailView(model: model, recordID: id, isSummary: true)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("完成") { model.rideSummaryID = nil }
+                                    .accessibilityIdentifier("ride-summary-done")
+                            }
+                        }
+                }.tint(WaymateTheme.accent)
+            }
+        }
         .sheet(isPresented: $showsMedia) { MediaView(model: model) }
         .confirmationDialog("结束当前 Ride？", isPresented: $confirmsEndRide, titleVisibility: .visible) {
             Button("结束 Ride", role: .destructive, action: model.stopRide)
                 .accessibilityIdentifier("ride-end-confirm")
             Button("取消", role: .cancel) {}
         } message: {
-            Text(model.isNavigationActive ? "保存本次记录。导航会继续运行。" : "保存本次记录并返回首页。")
+            Text(model.isNavigationActive ? "保存本次记录。导航会继续运行。" : "保存本次记录并查看 Ride Summary。")
         }
         .sheet(isPresented: $showsDataUse) { DataUseView() }
         .sheet(isPresented: $showsGatewaySettings) { GatewaySettingsView(model: model) }
@@ -138,6 +154,9 @@ struct ContentView: View {
                 }
                 Divider()
                 VStack(alignment: .leading, spacing: 18) {
+                    Button { showsRideHistory = true } label: {
+                        Label("RIDES · 骑行记录", systemImage: "clock.arrow.circlepath").frame(minHeight: 44)
+                    }.accessibilityIdentifier("ride-history-button")
                     deviceSummaryButton
                     mapDownloadsButton
                     Button { showsMedia = true } label: { Label("Media · Apple Music", systemImage: "music.note").frame(minHeight: 44) }
@@ -534,9 +553,16 @@ struct ContentView: View {
                     .buttonStyle(WaymatePrimaryButtonStyle())
                     .accessibilityLabel("开始记录 Ride")
                     .accessibilityIdentifier("ride-start-button")
+                if !model.savingRideIDs.isEmpty {
+                    ProgressView("正在保存 Ride…").accessibilityIdentifier("ride-save-pending")
+                }
                 if model.lastRideRecord != nil {
-                    Text("最近一次 Ride 已结束").font(.caption).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("ride-record-ready")
+                    Button {
+                        model.rideSummaryID = model.lastRideRecord?.id
+                    } label: {
+                        Text("最近一次 Ride 已结束 · 查看记录").font(.caption)
+                            .accessibilityIdentifier("ride-record-ready")
+                    }.frame(minHeight: 44).accessibilityIdentifier("ride-summary-open")
                 }
             }
             if let failure = model.rideFailure {

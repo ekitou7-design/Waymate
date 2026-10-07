@@ -51,7 +51,16 @@ final class RideSessionTests: XCTestCase {
                 first.stop(at: Date(timeIntervalSince1970: 200))
                 second.stop(at: Date(timeIntervalSince1970: 200))
             }
-            XCTAssertEqual(first, second)
+            // Completed records now own distinct UUIDs; lifecycle/metrics remain deterministic.
+            if let record = first.record, let other = second.record {
+                XCTAssertNotEqual(record.id, other.id)
+                XCTAssertEqual(record.startedAt, other.startedAt)
+                XCTAssertEqual(record.endedAt, other.endedAt)
+                XCTAssertEqual(record.elapsedTime, other.elapsedTime)
+                XCTAssertEqual(record.track, other.track)
+            } else {
+                XCTAssertEqual(first, second)
+            }
             XCTAssertEqual(first.state, start ? .active : .inactive)
             XCTAssertEqual(first.isActive, start)
         }

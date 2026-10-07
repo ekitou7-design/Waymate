@@ -5,6 +5,69 @@ import CoreLocation
 final class WaymateUITests: XCTestCase {
     private var previousLocation: XCUILocation?
 
+    func testRideShareFromSummaryAndHistoryDetailWithEmptyGPXDisabled() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--moto-ui-offline", "--waymate-ui-ride-store", UUID().uuidString]
+        app.launch()
+        app.buttons["ride-start-button"].tap()
+        XCTAssertTrue(app.buttons["ride-end-button"].waitForExistence(timeout: 10))
+        reveal(app.buttons["ride-end-button"], in: app)
+        app.buttons["ride-end-button"].tap(); app.buttons["结束 Ride"].tap()
+        XCTAssertTrue(app.buttons["ride-summary-done"].waitForExistence(timeout: 10))
+        reveal(app.buttons["ride-share-button"], in: app)
+        XCTAssertFalse(app.buttons["ride-export-gpx-button"].isEnabled)
+        XCTAssertTrue(app.staticTexts["ride-gpx-unavailable"].exists)
+        XCTAssertTrue(app.staticTexts["ride-share-privacy"].exists)
+        app.buttons["ride-share-button"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.cells["Save Image"].exists)
+        keepScreenshot(of: app, named: "Stage 6 — Summary system image share")
+        closeRideShareSheet(in: app)
+        app.buttons["ride-summary-done"].tap()
+        reveal(app.buttons["ride-history-button"], in: app); app.buttons["ride-history-button"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier MATCHES 'ride-history-[0-9A-F-]{36}'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
+        reveal(app.buttons["ride-share-button"], in: app)
+        app.buttons["ride-share-button"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 10))
+        keepScreenshot(of: app, named: "Stage 6 — Detail system image share")
+        closeRideShareSheet(in: app)
+        XCTAssertTrue(app.buttons["ride-share-button"].exists)
+    }
+
+    func testRideGPXSystemShareUsesRecordedSimulatorPoints() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--moto-ui-offline", "--waymate-ui-ride-store", UUID().uuidString]
+        app.launch()
+        app.buttons["ride-start-button"].tap()
+        XCTAssertTrue(app.buttons["ride-end-button"].waitForExistence(timeout: 10))
+        func emit(_ latitude: Double) {
+            XCUIDevice.shared.location = XCUILocation(location: CLLocation(
+                coordinate: .init(latitude: latitude, longitude: 117.1224488), altitude: 0,
+                horizontalAccuracy: 3, verticalAccuracy: 3, course: 0, speed: 5, timestamp: Date()))
+        }
+        emit(36.6748039); sleep(3); emit(36.6749839); sleep(3)
+        reveal(app.buttons["ride-end-button"], in: app)
+        app.buttons["ride-end-button"].tap(); app.buttons["结束 Ride"].tap()
+        XCTAssertTrue(app.buttons["ride-summary-done"].waitForExistence(timeout: 10))
+        reveal(app.buttons["ride-export-gpx-button"], in: app)
+        XCTAssertTrue(app.buttons["ride-export-gpx-button"].isEnabled)
+        app.buttons["ride-export-gpx-button"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 10))
+        keepScreenshot(of: app, named: "Stage 6 — actual GPS GPX system share")
+        closeRideShareSheet(in: app)
+        XCTAssertTrue(app.buttons["ride-export-gpx-button"].isEnabled)
+        app.buttons["ride-summary-done"].tap()
+        reveal(app.buttons["ride-history-button"], in: app); app.buttons["ride-history-button"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier MATCHES 'ride-history-[0-9A-F-]{36}'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
+        reveal(app.buttons["ride-export-gpx-button"], in: app)
+        app.buttons["ride-export-gpx-button"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 10))
+        keepScreenshot(of: app, named: "Stage 6 — Detail GPX system share")
+        closeRideShareSheet(in: app)
+    }
+
     func testStandaloneRideLifecycleUsesProductionControls() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--moto-ui-offline"]
@@ -43,10 +106,130 @@ final class WaymateUITests: XCTestCase {
         XCTAssertFalse(start.exists)
         app.buttons["ride-end-button"].tap()
         app.buttons["结束 Ride"].tap()
+        XCTAssertTrue(app.buttons["ride-summary-done"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["ride-detail-distance"].exists)
+        keepScreenshot(of: app, named: "Waymate Ride Summary — real record")
+        app.buttons["ride-summary-done"].tap()
         XCTAssertTrue(start.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["ride-record-ready"].exists)
+        XCTAssertTrue(app.buttons["ride-summary-open"].exists)
         XCTAssertFalse(pause.exists)
         keepScreenshot(of: app, named: "Waymate production Ride — ended")
+    }
+
+    func testEndRideDuringNavigationKeepsNavigationAndOffersSummary() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--moto-ui-offline", "--waymate-ui-ride-store", UUID().uuidString]
+        app.launch()
+        reveal(app.buttons["更多"], in: app)
+        app.buttons["更多"].tap()
+        reveal(app.buttons["demo-navigation-button"], in: app)
+        app.buttons["demo-navigation-button"].tap()
+        XCTAssertTrue(app.buttons["primary-navigation-action"].waitForExistence(timeout: 10))
+        reveal(app.buttons["ride-start-button"], in: app)
+        app.buttons["ride-start-button"].tap()
+        XCTAssertTrue(app.buttons["ride-end-button"].waitForExistence(timeout: 10))
+        reveal(app.buttons["ride-end-button"], in: app)
+        // Ride activation grows the section below the pinned END NAV bar.
+        // Move controls above the bottom system gesture area before tapping.
+        app.swipeUp()
+        app.buttons["ride-end-button"].tap()
+        app.buttons["结束 Ride"].tap()
+        XCTAssertTrue(app.buttons["ride-summary-open"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["ride-summary-done"].exists)
+        XCTAssertTrue(app.navigationBars["演示导航"].exists)
+        XCTAssertTrue(app.buttons["primary-navigation-action"].isEnabled)
+        reveal(app.buttons["ride-summary-open"], in: app)
+        app.buttons["ride-summary-open"].tap()
+        XCTAssertTrue(app.buttons["ride-summary-done"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["ride-save-success"].exists)
+        app.buttons["ride-summary-done"].tap()
+        XCTAssertTrue(app.navigationBars["演示导航"].exists)
+        app.buttons["primary-navigation-action"].tap()
+        XCTAssertTrue(app.textFields["destination-search-field"].waitForExistence(timeout: 5))
+    }
+
+    func testRideSummaryMapUsesRecordedSimulatorLocationSegments() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--moto-ui-offline", "--waymate-ui-ride-store", UUID().uuidString]
+        app.launch()
+        app.buttons["ride-start-button"].tap()
+        XCTAssertTrue(app.buttons["ride-end-button"].waitForExistence(timeout: 10))
+        // Real recorder input through Core Location; no seeded RideRecord or provider route.
+        func emit(_ latitude: Double) {
+            XCUIDevice.shared.location = XCUILocation(location: CLLocation(
+                coordinate: .init(latitude: latitude, longitude: 117.1224488), altitude: 0,
+                horizontalAccuracy: 3, verticalAccuracy: 3, course: 0, speed: 5, timestamp: Date()))
+        }
+        emit(36.6748039)
+        sleep(3)
+        emit(36.6749839)
+        sleep(3)
+        reveal(app.buttons["ride-end-button"], in: app)
+        app.buttons["ride-end-button"].tap()
+        app.buttons["结束 Ride"].tap()
+        XCTAssertTrue(app.buttons["ride-summary-done"].waitForExistence(timeout: 10))
+        reveal(app.buttons["ride-edit-name"], in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["ride-actual-track-map"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["ride-route-unavailable"].exists)
+        keepScreenshot(of: app, named: "Waymate Ride Summary — recorded simulator GPS")
+    }
+
+    func testRideHistoryEmptyUsesIsolatedLocalStorage() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--moto-ui-offline", "--waymate-ui-ride-store", UUID().uuidString]
+        app.launch()
+        let history = app.buttons["ride-history-button"]
+        reveal(history, in: app)
+        history.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["ride-history-empty"].waitForExistence(timeout: 5))
+        keepScreenshot(of: app, named: "Waymate Ride History — empty")
+        app.buttons["ride-history-done"].tap()
+        XCTAssertTrue(app.buttons["ride-start-button"].exists)
+    }
+
+    func testRideSummaryRenameReloadAndConfirmedDelete() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--moto-ui-offline", "--waymate-ui-ride-store", UUID().uuidString]
+        app.launch()
+        app.buttons["ride-start-button"].tap()
+        XCTAssertTrue(app.buttons["ride-end-button"].waitForExistence(timeout: 10))
+        reveal(app.buttons["ride-end-button"], in: app)
+        app.buttons["ride-end-button"].tap()
+        app.buttons["结束 Ride"].tap()
+        XCTAssertTrue(app.buttons["ride-summary-done"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["ride-save-success"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["ride-detail-elapsed"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["ride-detail-moving"].exists)
+        XCTAssertEqual(app.descendants(matching: .any)["ride-detail-average"].firstMatch.value as? String, "--")
+        reveal(app.buttons["ride-edit-name"], in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["ride-route-unavailable"].exists)
+        app.buttons["ride-edit-name"].tap()
+        let name = app.alerts.textFields.firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 3))
+        name.tap(); name.typeText("Morning Ride")
+        app.alerts.buttons["保存"].tap()
+        // Return to the top to inspect the persisted name.
+        app.swipeDown(); app.swipeDown()
+        XCTAssertTrue(app.staticTexts["Morning Ride"].waitForExistence(timeout: 5))
+        keepScreenshot(of: app, named: "Waymate Ride Summary — renamed")
+        app.terminate(); app.launch()
+        let history = app.buttons["ride-history-button"]
+        reveal(history, in: app); history.tap()
+        XCTAssertTrue(app.staticTexts["Morning Ride"].waitForExistence(timeout: 5))
+        keepScreenshot(of: app, named: "Waymate Ride History — persisted")
+        app.staticTexts["Morning Ride"].tap()
+        XCTAssertTrue(app.buttons["ride-edit-name"].waitForExistence(timeout: 5))
+        reveal(app.buttons["ride-delete-button"], in: app)
+        app.buttons["ride-delete-button"].tap()
+        app.buttons["取消"].tap()
+        XCTAssertTrue(app.buttons["ride-delete-button"].exists)
+        app.buttons["ride-delete-button"].tap()
+        app.buttons["永久删除"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["ride-history-empty"].waitForExistence(timeout: 5))
+        app.terminate(); app.launch()
+        reveal(app.buttons["ride-history-button"], in: app)
+        app.buttons["ride-history-button"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["ride-history-empty"].waitForExistence(timeout: 5))
     }
 
     func testLiveShanghaiCitySearchShowsDownloadCoverage() throws {
@@ -240,6 +423,8 @@ final class WaymateUITests: XCTestCase {
         XCTAssertTrue(app.buttons["ride-pause-button"].exists)
         app.buttons["ride-end-button"].tap()
         app.buttons["结束 Ride"].tap()
+        XCTAssertTrue(app.buttons["ride-summary-done"].waitForExistence(timeout: 5))
+        app.buttons["ride-summary-done"].tap()
         XCTAssertTrue(app.buttons["ride-start-button"].waitForExistence(timeout: 3))
     }
 
@@ -473,6 +658,15 @@ final class WaymateUITests: XCTestCase {
             if element.isHittable { return }
             app.swipeUp()
         }
+    }
+
+    private func closeRideShareSheet(in app: XCUIApplication) {
+        for label in ["Close", "关闭", "Cancel", "取消"] {
+            let button = app.buttons[label].firstMatch
+            if button.exists && button.isHittable { button.tap(); return }
+        }
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
     }
 
     private func keepScreenshot(of app: XCUIApplication, named name: String) {

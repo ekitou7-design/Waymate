@@ -17,6 +17,15 @@ final class AppModel: ObservableObject {
     @Published private(set) var rideFailure: String?
     var rideRecord: RideRecord? { rideSession.record }
     @Published private(set) var lastRideRecord: RideRecord?
+    @Published private(set) var rideHistory: [RideRecord] = []
+    @Published private(set) var rideHistoryLoading = true
+    @Published private(set) var rideHistoryError: String?
+    @Published private(set) var rideSaveErrors: [UUID: String] = [:]
+    @Published private(set) var savingRideIDs: Set<UUID> = []
+    @Published var rideSummaryID: UUID?
+    private let rideStore: RideStore
+    private var ridePersistenceTask: Task<Void, Never>?
+    private var latestStoppedRideID: UUID?
     // Transaction ownership only; RideSession remains the sole live Ride state.
     private var pendingAutomaticRide = false
 
@@ -53,9 +62,83 @@ final class AppModel: ObservableObject {
     func stopRide() {
         guard rideActive else { return }
         pendingAutomaticRide = false
-        lastRideRecord = rideSession.stop(at: rideNow())
+        guard let record = rideSession.stop(at: rideNow()) else { return }
         liveLocation.stopRide()
         updatePresentation()
+        // The session and queued operation retain the real snapshot during I/O.
+        latestStoppedRideID = record.id
+        savingRideIDs.insert(record.id)
+        let mayPresentSummary = !isNavigationActive
+        enqueueRidePersistence { [weak self] in
+            guard let self else { return }
+            do {
+                self.rideHistory = try await self.rideStore.append(record)
+                self.rideSaveErrors[record.id] = nil
+            } catch {
+                self.rideSaveErrors[record.id] = error.localizedDescription
+            }
+            self.savingRideIDs.remove(record.id)
+            // Publish the completed result after the persistence attempt, including failure.
+            if self.latestStoppedRideID == record.id { self.lastRideRecord = record }
+            if mayPresentSummary, !self.isNavigationActive, !self.rideActive,
+               self.lastRideRecord?.id == record.id {
+                self.rideSummaryID = record.id
+            }
+        }
+    }
+
+    func savedRide(id: UUID) -> RideRecord? {
+        rideHistory.first(where: { $0.id == id }) ?? (lastRideRecord?.id == id ? lastRideRecord : nil)
+    }
+
+    func renameRide(id: UUID, name: String) async throws {
+        try await mutateRideHistory {
+            let records = try await self.rideStore.updateName(id: id, name: name)
+            self.rideHistory = records
+            if self.lastRideRecord?.id == id { self.lastRideRecord = records.first(where: { $0.id == id }) }
+        }
+    }
+
+    func deleteRide(id: UUID) async throws {
+        try await mutateRideHistory {
+            self.rideHistory = try await self.rideStore.delete(id: id)
+            if self.lastRideRecord?.id == id { self.lastRideRecord = nil }
+            self.rideSaveErrors[id] = nil
+            if self.rideSummaryID == id { self.rideSummaryID = nil }
+        }
+    }
+
+    func retryRideSave(id: UUID) {
+        guard let record = savedRide(id: id), !savingRideIDs.contains(id) else { return }
+        savingRideIDs.insert(id)
+        enqueueRidePersistence { [weak self] in
+            guard let self else { return }
+            do {
+                self.rideHistory = try await self.rideStore.append(record)
+                self.rideSaveErrors[id] = nil
+            } catch { self.rideSaveErrors[id] = error.localizedDescription }
+            self.savingRideIDs.remove(id)
+        }
+    }
+
+    func waitForRidePersistence() async { await ridePersistenceTask?.value }
+
+    private func mutateRideHistory(_ operation: @escaping @MainActor () async throws -> Void) async throws {
+        let previous = ridePersistenceTask
+        let mutation = Task {
+            await previous?.value
+            try await operation()
+        }
+        ridePersistenceTask = Task { _ = try? await mutation.value }
+        try await mutation.value
+    }
+
+    private func enqueueRidePersistence(_ operation: @escaping @MainActor () async -> Void) {
+        let previous = ridePersistenceTask
+        ridePersistenceTask = Task {
+            await previous?.value
+            await operation()
+        }
     }
 
     private func subscribeRideLocation() -> Bool {
@@ -120,16 +203,37 @@ final class AppModel: ObservableObject {
     init(gatewayBaseURL: URL = AppConfiguration.gatewayBaseURL, startsServices: Bool = true,
          locationSource: (any NavigationLocationSource)? = nil,
          rideNow: @escaping () -> Date = Date.init,
-         presentationDriver: PresentationDriver? = nil) {
+         presentationDriver: PresentationDriver? = nil,
+         rideStore: RideStore? = nil) {
         let presentationDriver = presentationDriver ?? PresentationDriver()
         self.presentationDriver = presentationDriver
         liveLocation = SharedLocationSource(source: locationSource ?? CoreLocationNavigationSource())
         self.rideNow = rideNow
+        // Service-free tests use isolated scratch storage, never user history.
+        var rideFileURL = startsServices
+            ? RideStore.defaultFileURL
+            : FileManager.default.temporaryDirectory.appendingPathComponent("WaymateTests-\(UUID())/history.json")
+        #if DEBUG
+        // Isolate UI-test files without supplying any fake records or GPS data.
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "--waymate-ui-ride-store"), index + 1 < arguments.count,
+           let testID = UUID(uuidString: arguments[index + 1]) {
+            rideFileURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("WaymateUITests-\(testID)/history.json")
+        }
+        #endif
+        self.rideStore = rideStore ?? RideStore(fileURL: rideFileURL)
         liveRouteProvider = AmapGatewayRouteProvider(baseURL: gatewayBaseURL)
         placeProvider = AmapGatewayPlaceProvider(baseURL: gatewayBaseURL)
         mapGatewayBaseURL = gatewayBaseURL
         surroundingMap = SurroundingMapStore(baseURL: gatewayBaseURL)
         recentPlaces = Self.loadRecentPlaces()
+        enqueueRidePersistence { [weak self] in
+            guard let self else { return }
+            do { self.rideHistory = try await self.rideStore.load() }
+            catch { self.rideHistoryError = error.localizedDescription }
+            self.rideHistoryLoading = false
+        }
 
         surroundingMap.onScene = { [weak self] scene in
             self?.bluetooth.sendMapScene(scene)

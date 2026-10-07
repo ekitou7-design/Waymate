@@ -55,6 +55,7 @@ targets:
         NSLocationAlwaysAndWhenInUseUsageDescription: 导航开始后，WAYMATE 需要在锁屏或切换应用时继续更新骑行位置。
         NSBluetoothAlwaysUsageDescription: WAYMATE 使用蓝牙连接车把上的 ESP32-S3 圆屏设备。
         NSAppleMusicUsageDescription: WAYMATE 需要读取并控制 Apple Music 播放，以便在车把圆屏上切歌和暂停。
+        NSPhotoLibraryAddUsageDescription: WAYMATE 需要将你分享的骑行卡片保存到相册。
         UIBackgroundModes:
           - location
           - bluetooth-central
