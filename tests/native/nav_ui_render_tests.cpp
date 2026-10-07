@@ -253,13 +253,25 @@ void check_visible_utf8(lv_obj_t *object) {
   if(lv_obj_has_flag(object, LV_OBJ_FLAG_HIDDEN)) return;
   if(lv_obj_check_type(object, &lv_label_class)) {
     const auto *p = reinterpret_cast<const unsigned char *>(lv_label_get_text(object));
+    const auto *font = lv_obj_get_style_text_font(object, LV_PART_MAIN);
     while(*p) {
       const unsigned count = *p < 0x80 ? 1 : *p >= 0xF0 ? 4 : *p >= 0xE0 ? 3 : *p >= 0xC0 ? 2 : 0;
       CHECK(count > 0);
       if(!count) break;
+      std::uint32_t scalar = count == 1 ? p[0] : p[0] & (0x7FU >> count);
       for(unsigned i = 1; i < count; ++i) {
         CHECK(p[i] != 0 && (p[i] & 0xC0) == 0x80);
         if(!p[i]) return;
+        scalar = (scalar << 6) | (p[i] & 0x3FU);
+      }
+      if(scalar > 0x7F) {
+        lv_font_glyph_dsc_t glyph{};
+        if(!lv_font_get_glyph_dsc(font, &glyph, scalar, 0)) {
+          std::cerr << "label '" << lv_label_get_text(object)
+                    << "' missing U+" << std::hex << scalar << std::dec
+                    << " in its runtime font chain\n";
+          CHECK(false);
+        }
       }
       p += count;
     }
@@ -296,15 +308,24 @@ void test_stage_c_product_states() {
   state.page = MOTO_UI_PAGE_NAVIGATION;
   moto_nav_ui_set_state(&state);
   moto_nav_ui_set_phone_connection(MOTO_UI_PHONE_OFFLINE);
+  check_visible_utf8(lv_screen_active());
   export_preview("disconnected");
   CHECK(has_visible_label(lv_screen_active(), "PHONE LOST"));
   moto_nav_ui_set_phone_connection(MOTO_UI_PHONE_CONNECTING);
+  check_visible_utf8(lv_screen_active());
   export_preview("connecting-protocol-not-ready");
   moto_nav_ui_set_phone_connection(MOTO_UI_PHONE_ONLINE);
+  check_visible_utf8(lv_screen_active());
   export_preview("connected");
   pump(210); // Let the existing transient Connected hold expire.
   CHECK(has_visible_label(lv_screen_active(), "READY"));
+  check_visible_utf8(lv_screen_active());
   export_preview("idle-ready");
+
+  state = base_state();
+  state.route_request_in_flight = 1;
+  moto_nav_ui_set_state(&state);
+  check_visible_utf8(lv_screen_active());
 
   state = base_state();
   state.distance_to_maneuver_m = 320;
@@ -323,7 +344,21 @@ void test_stage_c_product_states() {
   for(int i=0;i<4;++i) state.road_polylines[i] = {static_cast<uint8_t>(i*2),2,3};
   state.next_road_name = "建国路";
   moto_nav_ui_set_state(&state);
+  check_visible_utf8(lv_screen_active());
   export_preview("navigation-normal");
+  state.online = 0;
+  moto_nav_ui_set_state(&state);
+  auto *status_label = find_visible_label(lv_screen_active(), "NETWORK OFFLINE");
+  CHECK(status_label != nullptr);
+  if(status_label) {
+    const auto *font = lv_obj_get_style_text_font(status_label, LV_PART_MAIN);
+    lv_font_glyph_dsc_t front{};
+    CHECK(lv_font_get_glyph_dsc(font, &front, 0x524D, 0));
+    CHECK(front.resolved_font != nullptr);
+    CHECK(front.resolved_font != font);
+  }
+  state.online = 1;
+  moto_nav_ui_set_state(&state);
   state.distance_to_maneuver_m = 1200;
   moto_nav_ui_set_state(&state); export_preview("navigation-1_2-km");
   state.distance_to_maneuver_m = 320;
@@ -347,18 +382,28 @@ void test_stage_c_product_states() {
     CHECK(lv_obj_get_style_text_align(road_label, LV_PART_MAIN) ==
           LV_TEXT_ALIGN_CENTER);
     CHECK(std::abs(bounds.x1 + bounds.x2 - 2 * (kWidth / 2)) <= 2);
-    CHECK(font->line_height == 28);
+    CHECK(font->line_height == 29);
     lv_font_glyph_dsc_t cjk{};
     CHECK(lv_font_get_glyph_dsc(font, &cjk, 0x661F, 0x6E56));
     CHECK(cjk.resolved_font != nullptr);
-    if(cjk.resolved_font) {
-      CHECK(cjk.resolved_font->line_height == font->line_height);
-      CHECK(cjk.resolved_font->base_line == font->base_line);
-    }
     lv_font_glyph_dsc_t latin{};
     CHECK(lv_font_get_glyph_dsc(font, &latin, 'W', 'e'));
     CHECK(latin.resolved_font == font);
   }
+  state.next_road_name = "向前行驶";
+  moto_nav_ui_set_state(&state);
+  auto *instruction_label = find_visible_label(lv_screen_active(), "向前行驶");
+  CHECK(instruction_label != nullptr);
+  if(instruction_label) {
+    const auto *font = lv_obj_get_style_text_font(instruction_label, LV_PART_MAIN);
+    const std::uint32_t instruction_glyphs[] = {0x5411, 0x524D, 0x884C, 0x9A76};
+    check_font_glyphs(font, instruction_glyphs, 4);
+    lv_font_glyph_dsc_t front{};
+    CHECK(lv_font_get_glyph_dsc(font, &front, 0x524D, 0));
+    CHECK(front.resolved_font != nullptr);
+    CHECK(front.resolved_font != font);
+  }
+  check_visible_utf8(lv_screen_active());
   state.next_road_name = "建国路";
   moto_nav_ui_set_state(&state);
   check_tabular_number(lv_screen_active(), "320");
@@ -445,11 +490,8 @@ void test_stage_c_product_states() {
     lv_font_glyph_dsc_t cjk{};
     CHECK(lv_font_get_glyph_dsc(font, &cjk, 0x661F, 0x6E56));
     CHECK(cjk.resolved_font != nullptr);
-    if(cjk.resolved_font) {
-      CHECK(cjk.resolved_font->line_height == font->line_height);
-      CHECK(cjk.resolved_font->base_line == font->base_line);
-    }
   }
+  check_visible_utf8(lv_screen_active());
   auto *mixed_artist = find_visible_label(lv_screen_active(),
                                           "星湖街 Kavinsky");
   CHECK(mixed_artist != nullptr);
@@ -458,10 +500,6 @@ void test_stage_c_product_states() {
     lv_font_glyph_dsc_t cjk{};
     CHECK(lv_font_get_glyph_dsc(font, &cjk, 0x661F, 0x6E56));
     CHECK(cjk.resolved_font != nullptr);
-    if(cjk.resolved_font) {
-      CHECK(cjk.resolved_font->line_height == font->line_height);
-      CHECK(cjk.resolved_font->base_line == font->base_line);
-    }
   }
   check_visible_utf8(lv_screen_active());
   const unsigned objects = lv_obj_get_child_count(lv_screen_active());

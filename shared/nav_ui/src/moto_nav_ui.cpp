@@ -339,20 +339,21 @@ void configure_typography() {
     arrow_fallback_font.fallback = &lv_font_montserrat_16;
     tertiary_font.fallback = &arrow_fallback_font;
     cjk_fallback_font = waymate_noto_16_75639;
-    cjk_fallback_font.line_height = tertiary_font.line_height;
-    cjk_fallback_font.base_line = tertiary_font.base_line;
     cjk_legacy_font = moto_font_nav_16;
-    cjk_legacy_font.line_height = tertiary_font.line_height;
-    cjk_legacy_font.base_line = tertiary_font.base_line;
     cjk_fallback_font.fallback = &cjk_legacy_font;
+    cjk_legacy_font.fallback = &lv_font_montserrat_16;
+    arrow_fallback_font.fallback = &cjk_fallback_font;
     cjk_title_font = waymate_noto_28_75038;
-    cjk_title_font.line_height = primary_font.line_height;
-    cjk_title_font.base_line = primary_font.base_line;
     nav_text_font = waymate_a_16_84851;
+    nav_text_font.line_height = cjk_fallback_font.line_height;
+    nav_text_font.base_line = cjk_fallback_font.base_line;
     nav_text_font.fallback = &cjk_fallback_font;
-    // Latin road names use Inter, Chinese fallback uses Noto at the same
-    // nominal size and metrics so both scripts share one visual baseline.
+    // Keep road labels on Noto's actual 28 px line box and baseline. This
+    // instance is used only by the navigation road label; global Inter fonts
+    // retain their original metrics on every other page.
     navigation_road_font = waymate_a_28_40830;
+    navigation_road_font.line_height = cjk_title_font.line_height;
+    navigation_road_font.base_line = cjk_title_font.base_line;
     navigation_road_font.fallback = &cjk_title_font;
     media_title_font = waymate_a_28_40830;
     media_title_font.fallback = &cjk_title_font;
@@ -364,6 +365,7 @@ void configure_typography() {
     speed_font.kerning = LV_FONT_KERNING_NONE;
     set_tabular_digits(speed_font, waymate_a_96_58825, speed_digit_metrics);
     navigation_status_font = waymate_a_32_74884;
+    navigation_status_font.fallback = &cjk_title_font;
     navigation_status_font.kerning = LV_FONT_KERNING_NONE;
     compass_cardinal_font = waymate_a_36_34158;
     compass_cardinal_font.kerning = LV_FONT_KERNING_NONE;
@@ -1707,13 +1709,18 @@ void create_navigation_page() {
     lv_obj_set_style_bg_color(hero, kBlack, 0);
     lv_obj_set_style_bg_opa(hero, LV_OPA_COVER, 0);
     ui.nav_road = make_label(page, &navigation_road_font, kWhite, "");
-    lv_obj_set_size(ui.nav_road, px(230), 20);
+    // Noto Sans SC 28 needs its full 29 px line box; leave one pixel of
+    // clearance so the largest glyph bounding boxes stay inside the label.
+    lv_obj_set_size(ui.nav_road, px(230), 30);
+    lv_obj_set_style_pad_all(ui.nav_road, 0, 0);
     lv_label_set_long_mode(ui.nav_road, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(ui.nav_road, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(ui.nav_road, LV_ALIGN_TOP_MID, 0, px(280));
 
     ui.nav_status = make_label(page, &tertiary_font, kAmber, "");
-    lv_obj_set_width(ui.nav_status, px(180));
+    // The status can switch to Inter 32 with Noto Sans SC 28 fallback.
+    lv_obj_set_size(ui.nav_status, px(180), 34);
+    lv_obj_set_style_pad_all(ui.nav_status, 0, 0);
     lv_obj_set_style_text_align(ui.nav_status, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(ui.nav_status, LV_ALIGN_TOP_MID, 0, px(320));
 
