@@ -3,6 +3,7 @@ import SwiftUI
 enum MotoScreen: Hashable {
     case routePreview
     case activeNavigation
+    case backtrack
 }
 
 /// One primary flow: destination → route → ride. Device management is secondary.
@@ -19,6 +20,7 @@ struct ContentView: View {
     @State private var showsMedia = false
     @State private var confirmsEndRide = false
     @State private var showsRideHistory = false
+    @State private var browsesDestination = false
 
     var body: some View {
         NavigationStack(path: navigationPath) {
@@ -27,6 +29,11 @@ struct ContentView: View {
                     switch screen {
                     case .routePreview: routePreviewScreen
                     case .activeNavigation: activeNavigationScreen
+                    case .backtrack:
+                        BacktrackView(model: model) {
+                            model.clearDestination()
+                            browsesDestination = true
+                        }
                     }
                 }
         }
@@ -37,6 +44,15 @@ struct ContentView: View {
         }
         .onChange(of: model.isNavigationActive) { _, active in
             if active { searchFocused = false }
+        }
+        .onChange(of: model.isBacktrackActive) { _, _ in browsesDestination = false }
+        .confirmationDialog(
+            model.guidanceConflict == .startBacktrack ? "开始原路返回将结束当前导航。" : "开始普通导航将结束原路返回。",
+            isPresented: Binding(get: { model.guidanceConflict != nil }, set: { if !$0 { model.cancelGuidanceSwitch() } }),
+            titleVisibility: .visible
+        ) {
+            Button("确认切换", action: model.confirmGuidanceSwitch).accessibilityIdentifier("guidance-switch-confirm")
+            Button("取消", role: .cancel, action: model.cancelGuidanceSwitch)
         }
         .sheet(isPresented: $showsDeviceDetails) { deviceDetails }
         .sheet(isPresented: $showsMapDownloads) {
@@ -80,11 +96,14 @@ struct ContentView: View {
         Binding(
             get: {
                 if model.isNavigationActive { return [.activeNavigation] }
+                if model.isBacktrackActive && !browsesDestination { return [.backtrack] }
                 if model.selectedPlace != nil { return [.routePreview] }
                 return []
             },
             set: { path in
-                if model.isNavigationActive, !path.contains(.activeNavigation) {
+                if model.isBacktrackActive, !browsesDestination, !path.contains(.backtrack) {
+                    model.endBacktrack()
+                } else if model.isNavigationActive, !path.contains(.activeNavigation) {
                     model.stopNavigation()
                 } else if model.selectedPlace != nil, !path.contains(.routePreview) {
                     model.clearDestination()
@@ -547,6 +566,19 @@ struct ContentView: View {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 24) { rideControls }
                     VStack(alignment: .leading, spacing: 18) { rideControls }
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Button(model.isBacktrackActive ? "RETURN TO BACKTRACK" : "BACKTRACK") {
+                        if model.isBacktrackActive { browsesDestination = false } else { model.startBacktrack() }
+                    }
+                    .font(.subheadline.weight(.medium)).frame(minHeight: 44)
+                    .disabled(!model.isBacktrackActive && model.backtrackUnavailableReason != nil)
+                    .accessibilityIdentifier("backtrack-start-button")
+                    if !model.isBacktrackActive, let reason = model.backtrackUnavailableReason {
+                        Text(reason).font(.caption).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("backtrack-unavailable-reason")
+                    }
+                    if let failure = model.backtrackFailure { Text(failure).font(.caption).foregroundStyle(WaymateTheme.warning) }
                 }
             } else {
                 Button("START RIDE", action: model.startRide)

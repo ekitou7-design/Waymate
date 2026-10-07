@@ -11,6 +11,89 @@ final class AppModel: ObservableObject {
     @Published private(set) var isDemoActive = false
     @Published private var rideSession = RideSession()
 
+    @Published private(set) var backtrackSession: BacktrackSession?
+    @Published private(set) var backtrackFailure: String?
+    @Published private(set) var guidanceConflict: GuidanceConflict?
+    enum GuidanceConflict { case startBacktrack, startNavigation }
+    private var pendingGuidanceSwitch: (() -> Void)?
+    private var latestRideFix: NavigationFix?
+    private var backtrackFreshnessTask: Task<Void, Never>?
+    // A read-only eligibility cache; computed from real recorded points until ready.
+    @Published private(set) var backtrackTrailReady = false
+    private var backtrackHasSpatialExtent = false
+    var isBacktrackActive: Bool { backtrackSession != nil }
+    var backtrackComponentState: BacktrackComponentState? {
+        backtrackSession?.component(paused: rideSession.state == .paused)
+    }
+    var backtrackUnavailableReason: String? {
+        if !rideActive { return "Start Ride to record a trail" }
+        if rideSession.state == .paused { return "Resume Ride to start Backtrack" }
+        if !backtrackTrailReady { return "Not enough ride history yet" }
+        return nil
+    }
+
+    func startBacktrack() {
+        guard !isBacktrackActive else { return }
+        guard backtrackUnavailableReason == nil, let startedAt = rideSession.startedAt else {
+            backtrackFailure = backtrackUnavailableReason
+            return
+        }
+        // Validate the concrete source before asking to end another guidance mode.
+        guard let route = try? BacktrackRoute.build(track: rideSession.track, sourceRideStartedAt: startedAt) else {
+            backtrackFailure = "Not enough ride history yet"
+            return
+        }
+        if isNavigationActive {
+            guidanceConflict = .startBacktrack
+            pendingGuidanceSwitch = { [weak self] in self?.startBacktrack() }
+            return
+        }
+        backtrackFailure = nil
+        backtrackSession = BacktrackSession(route: route)
+        if let fix = latestRideFix { backtrackSession?.update(fix, at: rideNow()) }
+        updatePresentation()
+        backtrackFreshnessTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                guard let self, !Task.isCancelled, self.isBacktrackActive else { return }
+                self.backtrackSession?.refresh(at: self.rideNow())
+                self.updatePresentation()
+            }
+        }
+    }
+
+    func endBacktrack() {
+        backtrackFreshnessTask?.cancel()
+        backtrackFreshnessTask = nil
+        backtrackSession = nil
+        backtrackFailure = nil
+        updatePresentation()
+    }
+
+    func cancelGuidanceSwitch() {
+        guidanceConflict = nil
+        pendingGuidanceSwitch = nil
+    }
+
+    func confirmGuidanceSwitch() {
+        guard let conflict = guidanceConflict, let action = pendingGuidanceSwitch else { return }
+        cancelGuidanceSwitch()
+        switch conflict {
+        case .startBacktrack:
+            guard backtrackUnavailableReason == nil else { return }
+            stopNavigation()
+        case .startNavigation: endBacktrack()
+        }
+        action()
+    }
+
+    private func confirmNavigationReplacement(_ action: @escaping () -> Void) -> Bool {
+        guard isBacktrackActive else { return true }
+        guidanceConflict = .startNavigation
+        pendingGuidanceSwitch = action
+        return false
+    }
+
     var rideSessionState: RideSessionState { rideSession.state }
     var rideActive: Bool { rideSession.isActive }
 
@@ -43,12 +126,17 @@ final class AppModel: ObservableObject {
         guard !rideSession.isActive else { return }
         guard subscribeRideLocation() else { return }
         rideSession.start(at: rideNow())
+        latestRideFix = nil
+        backtrackTrailReady = false
+        backtrackHasSpatialExtent = false
+        backtrackFailure = nil
         updatePresentation()
     }
 
     func pauseRide() {
         guard rideSession.state == .active else { return }
         rideSession.pause(at: rideNow())
+        backtrackSession?.invalidate(.waiting)
         liveLocation.stopRide()
         updatePresentation()
     }
@@ -56,12 +144,15 @@ final class AppModel: ObservableObject {
     func resumeRide() {
         guard rideSession.state == .paused, subscribeRideLocation() else { return }
         rideSession.resume(at: rideNow())
+        backtrackSession?.invalidate(.waiting)
         updatePresentation()
     }
 
     func stopRide() {
         guard rideActive else { return }
         pendingAutomaticRide = false
+        cancelGuidanceSwitch()
+        endBacktrack()
         guard let record = rideSession.stop(at: rideNow()) else { return }
         liveLocation.stopRide()
         updatePresentation()
@@ -145,8 +236,31 @@ final class AppModel: ObservableObject {
         do {
             try liveLocation.startRide(onFix: { [weak self] fix in
                 guard let self else { return }
+                let count = self.rideSession.track.count
                 self.rideSession.accept(fix, receivedAt: self.rideNow())
-            }, onFailure: { [weak self] message in self?.rideFailure = message })
+                self.latestRideFix = fix
+                if !self.backtrackTrailReady, self.rideSession.track.count != count {
+                    if let first = self.rideSession.track.first {
+                        let start = WGS84Point(longitudeDeg: first.longitude, latitudeDeg: first.latitude)
+                        for point in self.rideSession.track.suffix(self.rideSession.track.count - count) {
+                            let position = WGS84Point(longitudeDeg: point.longitude, latitudeDeg: point.latitude)
+                            if BreadcrumbMath.distance(start, position) >= 20 { self.backtrackHasSpatialExtent = true }
+                        }
+                    }
+                    if self.backtrackHasSpatialExtent, self.rideSession.track.count >= 3, self.rideSession.distance >= 50 {
+                        // Full route validation happens once at eligibility, then once at Start.
+                        self.backtrackTrailReady = BacktrackRoute.isEligible(track: self.rideSession.track)
+                    }
+                }
+                if self.rideSession.state == .active, self.isBacktrackActive {
+                    self.backtrackSession?.update(fix, at: self.rideNow())
+                    self.updatePresentation()
+                }
+            }, onFailure: { [weak self] message in
+                self?.rideFailure = message
+                self?.backtrackSession?.invalidate(.unavailable)
+                self?.updatePresentation()
+            })
             rideFailure = nil
             return true
         } catch {
@@ -321,6 +435,7 @@ final class AppModel: ObservableObject {
     deinit {
         placeSearchTask?.cancel()
         routePreviewTask?.cancel()
+        backtrackFreshnessTask?.cancel()
     }
 
     var isGatewayConfigured: Bool {
@@ -547,6 +662,9 @@ final class AppModel: ObservableObject {
     func beginLiveNavigation(destination: WGS84Point, destinationPOIID: String? = nil,
                              routeProvider: any NavigationRouteProviding) {
         guard !isNavigationActive, !isUpdatingGateway else { return }
+        guard confirmNavigationReplacement({ [weak self] in
+            self?.beginLiveNavigation(destination: destination, destinationPOIID: destinationPOIID, routeProvider: routeProvider)
+        }) else { return }
         if !rideActive {
             startRide()
             guard rideActive else {
@@ -572,6 +690,7 @@ final class AppModel: ObservableObject {
 
     func startDemoNavigation() {
         guard !isNavigationActive, !isUpdatingGateway else { return }
+        guard confirmNavigationReplacement({ [weak self] in self?.startDemoNavigation() }) else { return }
         surroundingMap.reset()
         runtime?.stop()
         let demoSession = DemoNavigationSession()
@@ -693,7 +812,7 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     private func updatePresentation() -> Bool {
-        presentationDriver.update(navigation: navigationComponentState, rideActive: rideActive)
+        presentationDriver.update(navigation: navigationComponentState, rideActive: rideActive, backtrack: backtrackComponentState)
     }
 
     private func beginRoutePreviewRequestIfPossible() {

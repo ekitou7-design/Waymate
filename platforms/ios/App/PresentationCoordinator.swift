@@ -1,11 +1,12 @@
 /// Pure presentation policy, consumed by the production PresentationDriver.
 struct PresentationDecision: Equatable, Sendable {
     enum PrimaryComponent: Equatable, Sendable {
-        case idle, ride, navigation, media
+        case idle, ride, navigation, backtrack, media
     }
 
     enum Reason: Equatable, Sendable {
         case idle, rideHome, navigationHome, arrived, offRoute, rerouting, temporaryMedia
+        case backtrackHome, backtrackOffTrack, backtrackArrived
     }
 
     let primaryComponent: PrimaryComponent
@@ -13,6 +14,7 @@ struct PresentationDecision: Equatable, Sendable {
     /// Identity of the temporary Media interaction, not a navigation event.
     let eventIdentity: String?
     let temporaryExpiry: ContinuousClock.Instant?
+    var urgentEventIdentity: String? = nil
 }
 
 enum PresentationCoordinator {
@@ -48,6 +50,7 @@ enum PresentationCoordinator {
         /// This input is a fact for evaluation, never owned or changed here.
         let rideActive: Bool
         let mediaInteraction: MediaInteraction?
+        var backtrack: BacktrackComponentState? = nil
     }
 
     /// All instants must use the same monotonic clock. Reads no clock itself and
@@ -67,6 +70,13 @@ enum PresentationCoordinator {
             // No proximity heuristic: distance alone does not establish urgency.
         }
 
+        if let backtrack = input.backtrack, !backtrack.paused, !backtrack.arrived,
+           backtrack.locationValidity == .usable, backtrack.offTrack {
+            var result = decision(.backtrack, .backtrackOffTrack)
+            result.urgentEventIdentity = backtrack.urgentEventIdentity
+            return result
+        }
+
         if let media = input.mediaInteraction,
            now >= media.startedAt, now < media.expiry {
             return PresentationDecision(
@@ -82,6 +92,9 @@ enum PresentationCoordinator {
             // Unusable/stale location does not invalidate an accepted Home route
             // and does not by itself create an urgent presentation override.
             return decision(.navigation, navigation.arrived ? .arrived : .navigationHome)
+        }
+        if let backtrack = input.backtrack {
+            return decision(.backtrack, backtrack.arrived ? .backtrackArrived : .backtrackHome)
         }
         return input.rideActive ? decision(.ride, .rideHome) : decision(.idle, .idle)
     }

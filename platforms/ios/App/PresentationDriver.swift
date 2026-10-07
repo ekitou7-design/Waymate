@@ -16,7 +16,8 @@ enum RoundDisplayPage: UInt8, CaseIterable {
     init(primary: PresentationDecision.PrimaryComponent) {
         switch primary {
         case .idle, .navigation: self = .navigation
-        case .ride: self = .speed
+        // BLE v1 has no Backtrack page. Speed is explicitly a fallback, not guidance.
+        case .ride, .backtrack: self = .speed
         case .media: self = .music
         }
     }
@@ -52,9 +53,10 @@ final class PresentationDriver {
     deinit { expiryTask?.cancel() }
 
     @discardableResult
-    func update(navigation: NavigationComponentState?, rideActive: Bool) -> Bool {
+    func update(navigation: NavigationComponentState?, rideActive: Bool,
+                backtrack: BacktrackComponentState? = nil) -> Bool {
         // Read-only projections, refreshed by AppModel; no lifecycle ownership.
-        facts = .init(navigation: navigation, rideActive: rideActive, mediaInteraction: nil)
+        facts = .init(navigation: navigation, rideActive: rideActive, mediaInteraction: nil, backtrack: backtrack)
         return reevaluate()
     }
 
@@ -104,10 +106,12 @@ final class PresentationDriver {
         decision = next
         let urgentEvent = (next.reason == .offRoute || next.reason == .rerouting)
             && next.reason != previous?.reason
+        let backtrackEvent = next.reason == .backtrackOffTrack
+            && next.urgentEventIdentity != previous?.urgentEventIdentity
         guard force || previous == nil
             || next.primaryComponent != previous?.primaryComponent
             || next.eventIdentity != previous?.eventIdentity
-            || urgentEvent else { return false }
+            || urgentEvent || backtrackEvent else { return false }
         selectedPage = RoundDisplayPage(primary: next.primaryComponent)
         manualSelection = false
         trace("\(String(describing: previous?.primaryComponent)) -> \(next.primaryComponent) reason=\(next.reason) event=\(next.eventIdentity ?? "--") resync=\(force)")
@@ -118,7 +122,7 @@ final class PresentationDriver {
     private func evaluate() -> PresentationDecision {
         PresentationCoordinator.evaluate(
             input: .init(navigation: facts.navigation, rideActive: facts.rideActive,
-                         mediaInteraction: mediaSuppressed ? nil : mediaInteraction),
+                         mediaInteraction: mediaSuppressed ? nil : mediaInteraction, backtrack: facts.backtrack),
             now: now()
         )
     }
