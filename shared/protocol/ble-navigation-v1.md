@@ -480,3 +480,7 @@ cmake --build build/native --target ble_protocol_tests
 
 测试覆盖全部消息 round-trip、固定 UUID/属性、CRC 检错、20-byte 分片、重组、重复
 与冲突分片、缺口、超时、较新 START 取代、序号回绕、输入边界和黄金字节。
+
+## Stage 7B additive extension
+
+See [Backtrack display extension](ble-backtrack-v1.md) for capability-gated messages 0x15/0x16 and independent page 4. Existing packet layouts and NavigationSnapshot pages 0–3 remain unchanged.

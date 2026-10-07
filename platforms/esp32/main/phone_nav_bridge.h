@@ -59,6 +59,8 @@ class PhoneNavBridge {
   static void music_command(moto_music_command_t command, void* context);
   static void demo_changed(uint8_t enabled, void* context);
 
+  moto::ble::AckStatus consume_backtrack(const moto::ble::BacktrackState& input);
+  moto::ble::AckStatus consume_backtrack_geometry(const moto::ble::BacktrackGeometry& input);
   void consume_navigation(const moto::ble::NavigationSnapshot& input);
   moto::ble::AckStatus consume_geometry(
       const moto::ble::RouteGeometry& input);
@@ -93,6 +95,15 @@ class PhoneNavBridge {
   // road/building projection.
   moto::nav::NavSnapshot render_snapshot_{};
   GeometryAssembly geometry_{};
+  moto::ble::BacktrackState backtrack_{};
+  moto::ble::BacktrackState render_backtrack_{};
+  moto::ble::BacktrackIdentity backtrack_geometry_identity_{};
+  uint32_t backtrack_geometry_generation_ = 0;
+  uint16_t backtrack_next_chunk_ = 0, backtrack_total_points_ = 0;
+  bool backtrack_geometry_complete_ = false;
+  std::vector<moto::ble::BacktrackPoint> backtrack_points_, render_backtrack_points_;
+  moto_ui_page_t selected_page_ = MOTO_UI_PAGE_NAVIGATION;
+  moto_ui_page_t render_selected_page_ = MOTO_UI_PAGE_NAVIGATION;
   SendCallback sender_ = nullptr;
   void* sender_context_ = nullptr;
   // BLE decoding runs on moto_ble_rx while touch callbacks run on the LVGL

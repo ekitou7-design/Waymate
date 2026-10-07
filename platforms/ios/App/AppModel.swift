@@ -375,7 +375,7 @@ final class AppModel: ObservableObject {
         }
         presentationDriver.onSelection = { [weak self] page in
             guard let self else { return }
-            self.bluetooth.sendNavigationSnapshot(self.navigation, displayPage: page)
+            self.publishRoundDisplay(page: page)
         }
         bluetooth.onDisplayResynchronization = { [weak self] in
             self?.presentationDriver.resynchronize()
@@ -778,9 +778,7 @@ final class AppModel: ObservableObject {
                 self.navigationFailure = nil
                 self.pendingAutomaticRide = false
             }
-            if !self.updatePresentation() {
-                self.bluetooth.sendNavigationSnapshot(snapshot, displayPage: self.presentationDriver.selectedPage)
-            }
+            self.updatePresentation()
             if snapshot.hasRouteView {
                 self.surroundingMap.update(
                     latitudeDeg: snapshot.routeViewOriginLatitudeDeg,
@@ -810,9 +808,17 @@ final class AppModel: ObservableObject {
         updatePresentation()
     }
 
+    private func publishRoundDisplay(page: RoundDisplayPage) {
+        bluetooth.sendBacktrack(session: backtrackSession, paused: rideSession.state == .paused, page: page)
+        // The real NavCore state remains independent. New page is sent only by BacktrackState.
+        bluetooth.sendNavigationSnapshot(navigation, displayPage: page == .backtrack ? .speed : page)
+    }
+
     @discardableResult
     private func updatePresentation() -> Bool {
-        presentationDriver.update(navigation: navigationComponentState, rideActive: rideActive, backtrack: backtrackComponentState)
+        let changed = presentationDriver.update(navigation: navigationComponentState, rideActive: rideActive, backtrack: backtrackComponentState)
+        if !changed { publishRoundDisplay(page: presentationDriver.selectedPage) }
+        return changed
     }
 
     private func beginRoutePreviewRequestIfPossible() {

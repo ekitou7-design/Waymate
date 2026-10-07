@@ -56,6 +56,31 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic) int32_t longitudeE6;
 @end
 
+@interface MotoBLEBacktrackStateInput : NSObject
+@property(nonatomic, copy) NSData *identity;
+@property(nonatomic) uint32_t generation;
+@property(nonatomic) uint16_t flags;
+@property(nonatomic) uint8_t page;
+@property(nonatomic) uint32_t remainingDistanceM;
+@property(nonatomic) uint32_t targetDistanceM;
+@property(nonatomic) uint32_t progressM;
+@property(nonatomic) uint16_t targetBearingCentiDegrees;
+@property(nonatomic) uint16_t directionCentiDegrees;
+@property(nonatomic) int32_t latitudeE6;
+@property(nonatomic) int32_t longitudeE6;
+@end
+@interface MotoBLEBacktrackPointInput : MotoBLEMapPointInput
+@property(nonatomic) uint32_t progressM;
+@property(nonatomic) uint16_t segmentIndex;
+@end
+@interface MotoBLEBacktrackGeometryInput : NSObject
+@property(nonatomic, copy) NSData *identity;
+@property(nonatomic) uint32_t generation;
+@property(nonatomic) uint16_t chunkIndex;
+@property(nonatomic) uint16_t totalPointCount;
+@property(nonatomic, copy) NSArray<MotoBLEBacktrackPointInput *> *points;
+@end
+
 @interface MotoBLEMapRoadInput : NSObject
 @property(nonatomic, copy) NSString *className;
 @property(nonatomic, copy) NSArray<MotoBLEMapPointInput *> *points;
@@ -157,6 +182,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (nullable NSArray<NSData *> *)encodeRouteGeometryFromSnapshot:(MotoNavCoreSnapshot *)snapshot
                                                            error:(NSError **)error;
+
+- (nullable NSArray<NSData *> *)encodeBacktrackState:(MotoBLEBacktrackStateInput *)state error:(NSError **)error;
+- (nullable NSArray<NSData *> *)encodeBacktrackGeometry:(MotoBLEBacktrackGeometryInput *)geometry error:(NSError **)error;
 
 - (nullable NSArray<NSData *> *)encodeMediaState:(MotoBLEMediaStateInput *)state
                                            error:(NSError **)error;

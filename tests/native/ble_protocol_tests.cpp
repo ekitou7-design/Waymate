@@ -589,6 +589,57 @@ void test_link_watchdog() {
 
 }  // namespace
 
+void test_backtrack_additive_protocol() {
+  moto::ble::BacktrackState state;
+  state.identity[0] = 1; state.identity[15] = 255;
+  state.generation = 0xFFFF'FFFFU;
+  state.remaining_distance_m = 0xFFFF'FFFEU;
+  state.target_distance_m = 0xFFFF'FFFEU;
+  state.progress_m = 0xFFFF'FFFEU;
+  state.position = {36'000'000, 117'000'000};
+  state.target_bearing_cdeg = 35999; state.direction_cdeg = 18000;
+  for (auto flags : {moto::ble::BacktrackActive, moto::ble::BacktrackOffTrack,
+                     moto::ble::BacktrackArrived, moto::ble::BacktrackLocationValid}) {
+    state.flags = moto::ble::BacktrackActive | flags;
+    const auto encoded = moto::ble::encode_message(state);
+    CHECK(encoded.ok());
+    const auto decoded = moto::ble::decode_message(moto::ble::MessageType::BacktrackState, moto::ble::ByteView(encoded.value));
+    CHECK(decoded.ok());
+    CHECK(std::get<moto::ble::BacktrackState>(decoded.value) == state);
+    for (std::size_t n = 0; n < encoded.value.size(); ++n) {
+      CHECK(!moto::ble::decode_message(moto::ble::MessageType::BacktrackState, {encoded.value.data(), n}).ok());
+    }
+  }
+  state.flags = 0; state.display_page = moto::ble::DisplayPage::Speed;
+  CHECK(moto::ble::encode_message(state).ok());
+  state.identity = {}; CHECK(!moto::ble::encode_message(state).ok());
+  moto::ble::BacktrackGeometry geometry;
+  geometry.identity[0] = 1; geometry.generation = 2;
+  geometry.total_point_count = 24;
+  for (int i = 0; i < 24; ++i) geometry.points.push_back({{36'000'000+i, 117'000'000+i}, static_cast<uint32_t>(i*10), static_cast<uint16_t>(i/12)});
+  const auto encoded = moto::ble::encode_message(geometry);
+  CHECK(encoded.ok());
+  const auto decoded = moto::ble::decode_message(moto::ble::MessageType::BacktrackGeometry, moto::ble::ByteView(encoded.value));
+  CHECK(decoded.ok()); CHECK(std::get<moto::ble::BacktrackGeometry>(decoded.value) == geometry);
+  for (std::size_t n = 0; n < encoded.value.size(); ++n)
+    CHECK(!moto::ble::decode_message(moto::ble::MessageType::BacktrackGeometry, {encoded.value.data(), n}).ok());
+  const auto frames = moto::ble::fragment_message(moto::ble::MessageType::BacktrackGeometry, 4, moto::ble::ByteView(encoded.value), 20, moto::ble::AckRequested);
+  CHECK(frames.ok()); CHECK(frames.value.size() <= 46);
+  moto::ble::Reassembler reassembler;
+  moto::ble::ReassemblyResult result;
+  uint64_t time = 0;
+  for (const auto& frame : frames.value) result = reassembler.push(moto::ble::ByteView(frame), time += 15);
+  CHECK(result.complete()); CHECK(result.message.payload == encoded.value);
+  CHECK(moto::ble::decode_message(static_cast<moto::ble::MessageType>(0x7f), {}).error == moto::ble::Error::UnknownMessageType);
+  geometry.points[12].segment_index = 0; geometry.points[13].segment_index = 0;
+  geometry.points[14].progress_m = 1;
+  CHECK(!moto::ble::encode_message(geometry).ok());
+  moto::ble::NavigationSnapshot nav; nav.display_page = moto::ble::DisplayPage::Backtrack;
+  CHECK(!moto::ble::encode_message(nav).ok()); // No Backtrack hidden inside Navigation.
+  moto::ble::DeviceCommand page; page.command_id = 1; page.page = moto::ble::DisplayPage::Backtrack;
+  CHECK(moto::ble::encode_message(page).ok());
+}
+
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--dump-golden") {
     dump_golden();
@@ -597,6 +648,7 @@ int main(int argc, char** argv) {
 
   test_uuid_contract();
   test_crc_and_sequence_primitives();
+  test_backtrack_additive_protocol();
   test_all_message_round_trips();
   test_golden_vectors();
   test_fragmentation_and_reassembly();

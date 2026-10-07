@@ -530,3 +530,7 @@ cmake --build build/native --target ble_protocol_tests
 The tests cover round-trip for all messages, the fixed UUIDs/properties, CRC error detection,
 20-byte fragmentation, reassembly, duplicate and conflicting fragments, gaps, timeouts,
 replacement by a newer START, sequence wrap-around, input bounds and the golden bytes.
+
+## Stage 7B additive extension
+
+See [Backtrack display extension](ble-backtrack-v1.md) for capability-gated messages 0x15/0x16 and independent page 4. Existing packet layouts and NavigationSnapshot pages 0–3 remain unchanged.

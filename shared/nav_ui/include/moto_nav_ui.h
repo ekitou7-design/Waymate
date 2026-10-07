@@ -58,6 +58,7 @@ typedef enum {
     MOTO_UI_PAGE_SPEED,
     MOTO_UI_PAGE_COMPASS,
     MOTO_UI_PAGE_MUSIC,
+    MOTO_UI_PAGE_BACKTRACK,
     MOTO_UI_PAGE_COUNT,
 } moto_ui_page_t;
 
@@ -149,6 +150,24 @@ typedef struct {
     const char *road_name;
     const char *next_road_name;
 } moto_ui_state_t;
+
+#define MOTO_UI_BACKTRACK_POINT_CAPACITY 256
+typedef struct {
+    moto_ui_point_t pixel;
+    uint32_t progress_m;
+    uint16_t segment_index;
+} moto_ui_backtrack_point_t;
+typedef struct {
+    uint8_t active, off_track, arrived, location_valid, relative_direction;
+    uint8_t trail_gap, paused, geometry_unavailable;
+    uint32_t remaining_distance_m, target_distance_m, progress_m;
+    uint16_t direction_cdeg;
+    uint16_t point_count;
+    moto_ui_backtrack_point_t points[MOTO_UI_BACKTRACK_POINT_CAPACITY];
+    moto_ui_point_t marker;
+} moto_ui_backtrack_state_t;
+
+void moto_nav_ui_set_backtrack_state(const moto_ui_backtrack_state_t *state);
 
 void moto_nav_ui_create(void);
 /** Draw the monochrome power-on wordmark before the full UI is created. */

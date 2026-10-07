@@ -16,7 +16,7 @@ add_library(moto_nav_presenter STATIC
   src/moto_nav_presenter.cpp
 )
 
-target_include_directories(moto_nav_presenter PUBLIC include)
+target_include_directories(moto_nav_presenter PUBLIC include ../ble_protocol/include)
 target_link_libraries(moto_nav_presenter PUBLIC moto_nav_core moto_nav_ui)
 target_compile_features(moto_nav_presenter PUBLIC cxx_std_17)
 

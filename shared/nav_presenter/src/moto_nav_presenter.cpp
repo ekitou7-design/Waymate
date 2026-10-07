@@ -378,3 +378,53 @@ void NavPresenter::apply_to_lvgl() const {
 }
 
 }  // namespace moto::nav
+
+namespace moto::nav {
+void NavPresenter::update_backtrack(const moto::ble::BacktrackState& s,
+                                   const std::vector<moto::ble::BacktrackPoint>& points) {
+  auto& out = backtrack_ui_;
+  out = {};
+  out.active = (s.flags & moto::ble::BacktrackActive) != 0;
+  out.off_track = (s.flags & moto::ble::BacktrackOffTrack) != 0;
+  out.arrived = (s.flags & moto::ble::BacktrackArrived) != 0;
+  out.location_valid = (s.flags & moto::ble::BacktrackLocationValid) != 0;
+  out.relative_direction = (s.flags & moto::ble::BacktrackRelativeDirection) != 0;
+  out.trail_gap = (s.flags & moto::ble::BacktrackTrailGap) != 0;
+  out.paused = (s.flags & moto::ble::BacktrackPaused) != 0;
+  out.geometry_unavailable = (s.flags & moto::ble::BacktrackGeometryUnavailable) != 0;
+  out.remaining_distance_m = s.remaining_distance_m;
+  out.target_distance_m = s.target_distance_m;
+  out.progress_m = s.progress_m;
+  out.direction_cdeg = s.direction_cdeg;
+  if (!out.active || points.empty()) return;
+  // North-up overview in the small dedicated breadcrumb viewport. WGS84 only;
+  // no GCJ-02 background roads are mixed with this actual trail.
+  const double lat = points.front().coordinate.latitude_e6 / 1e6;
+  const double lon = points.front().coordinate.longitude_e6 / 1e6;
+  const double lon_scale = std::cos(radians(lat));
+  const auto xy = [&](const moto::ble::GeoPointE6& p) {
+    double delta = p.longitude_e6 / 1e6 - lon;
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    return std::pair<double,double>{delta * lon_scale, p.latitude_e6 / 1e6 - lat};
+  };
+  double min_x = 0, max_x = 0, min_y = 0, max_y = 0;
+  for (const auto& p : points) {
+    const auto v = xy(p.coordinate);
+    min_x = std::min(min_x, v.first); max_x = std::max(max_x, v.first);
+    min_y = std::min(min_y, v.second); max_y = std::max(max_y, v.second);
+  }
+  const double scale = std::min(250.0 / std::max(0.00001, max_x-min_x),
+                                82.0 / std::max(0.00001, max_y-min_y));
+  const auto project = [&](const moto::ble::GeoPointE6& p) -> moto_ui_point_t {
+    const auto v = xy(p);
+    return {static_cast<int16_t>(std::clamp(std::lround(142 + (v.first-(min_x+max_x)/2)*scale), -2000L, 2000L)),
+            static_cast<int16_t>(std::clamp(std::lround(53 - (v.second-(min_y+max_y)/2)*scale), -2000L, 2000L))};
+  };
+  out.point_count = static_cast<uint16_t>(std::min<std::size_t>(points.size(), MOTO_UI_BACKTRACK_POINT_CAPACITY));
+  for (std::size_t i = 0; i < out.point_count; ++i) {
+    out.points[i] = {project(points[i].coordinate), points[i].progress_m, points[i].segment_index};
+  }
+  out.marker = project(s.position);
+}
+} // namespace moto::nav

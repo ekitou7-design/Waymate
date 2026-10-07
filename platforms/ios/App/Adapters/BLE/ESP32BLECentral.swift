@@ -14,6 +14,7 @@ struct BLEDeviceSnapshot: Equatable {
 
     var connection: Connection = .idle
     var negotiatedProtocol = "--"
+    var supportsBacktrack = false
     var lastCommandID: UInt16?
 }
 
@@ -253,6 +254,10 @@ final class ESP32BLECentral: NSObject {
     private var codec: MotoBLEProtocolCodec?
     private var handshake: BLEHandshakeGate?
     private var navigationState = BLENavigationStateCache()
+    private(set) var backtrackState = BLEBacktrackStateCache()
+    private var backtrackDelivery = BLEBacktrackGeometryDelivery()
+    private var backtrackStatePending = false
+    private var lastBacktrackNavigationGeneration: UInt32?
     private var latestMediaState: PhoneMediaState?
     private var latestMapScene: OfflineMapSceneWindow?
     private var mapSceneDelivery = BLEMapSceneDelivery()
@@ -333,8 +338,29 @@ final class ESP32BLECentral: NSObject {
         snapshot = BLEDeviceSnapshot(connection: .idle)
     }
 
+    func sendBacktrack(session: BacktrackSession?, paused: Bool, page: RoundDisplayPage) {
+        let previous = backtrackState.generation
+        let wasActive = (backtrackState.state?.flags ?? 0) & 1 != 0
+        backtrackState.update(session: session, paused: paused, page: page)
+        if previous != backtrackState.generation || (wasActive && session == nil) {
+            backtrackDelivery = BLEBacktrackGeometryDelivery()
+        }
+        backtrackStatePending = backtrackState.state != nil
+    }
+
     func sendNavigationSnapshot(_ state: MotoNavCoreSnapshot, displayPage: RoundDisplayPage? = nil) {
-        navigationState.update(state, displayPageName: displayPage?.protocolName)
+        if backtrackState.usesIndependentState(peerCapabilities: peerCapabilities) {
+            // Guidance and selection travel independently in BacktrackState.
+            // The unchanged real idle NavCore snapshot is a mode-boundary baseline,
+            // not a second high-rate guidance packet.
+            if lastBacktrackNavigationGeneration != backtrackState.generation {
+                navigationState.update(state, displayPageName: (displayPage == .backtrack ? RoundDisplayPage.speed : displayPage)?.protocolName)
+                lastBacktrackNavigationGeneration = backtrackState.generation
+            }
+        } else {
+            lastBacktrackNavigationGeneration = nil
+            navigationState.update(state, displayPageName: (displayPage == .backtrack ? RoundDisplayPage.speed : displayPage)?.protocolName)
+        }
         scheduleNavigationTransmit()
     }
 
@@ -604,6 +630,7 @@ final class ESP32BLECentral: NSObject {
                     name: peripheral?.name ?? "WAYMATE"
                 )
                 snapshot.negotiatedProtocol = "V1"
+                snapshot.supportsBacktrack = value.capabilities & (1 << 8) != 0
                 lastValidDeviceFrameAtMs = Self.monotonicMs()
                 startHeartbeat()
                 resynchronizeCurrentDisplayState()
@@ -618,6 +645,10 @@ final class ESP32BLECentral: NSObject {
     /// bookkeeping, so this session receives a complete display baseline.
     private func resynchronizeCurrentDisplayState() {
         navigationState.resynchronize()
+        backtrackStatePending = backtrackState.state != nil
+        if backtrackState.usesIndependentState(peerCapabilities: peerCapabilities) {
+            lastBacktrackNavigationGeneration = backtrackState.generation
+        }
         scheduleNavigationTransmit()
         flushPendingMediaState()
         flushPendingMapScene()
@@ -689,6 +720,7 @@ final class ESP32BLECentral: NSObject {
     }
 
     private func clearProtocolState() {
+        snapshot.supportsBacktrack = false
         gattSetupTimeoutTask?.cancel()
         gattSetupTimeoutTask = nil
         handshakeTask?.cancel()
@@ -703,6 +735,8 @@ final class ESP32BLECentral: NSObject {
         lastNavigationTransmitAtMs = 0
         lastWriteWithoutResponseAtMs = 0
         lastRouteGeometrySignature = nil
+        backtrackDelivery = BLEBacktrackGeometryDelivery()
+        lastBacktrackNavigationGeneration = nil
         mapSceneDelivery = BLEMapSceneDelivery()
         mapSceneFinalFrame = nil
         phoneToDeviceCharacteristic = nil
@@ -809,6 +843,8 @@ final class ESP32BLECentral: NSObject {
             lastRouteGeometrySignature = nil
             mapSceneDelivery.queueWasDiscarded()
             mapSceneFinalFrame = nil
+            backtrackDelivery = BLEBacktrackGeometryDelivery()
+            backtrackStatePending = backtrackState.state != nil
             resetQueuedFrames = true
         }
         outboundFrames.append(contentsOf: frames)
@@ -819,7 +855,7 @@ final class ESP32BLECentral: NSObject {
     private func scheduleNavigationTransmit() {
         guard protocolReady,
               codec != nil,
-              navigationState.pending != nil,
+              (navigationState.pending != nil || backtrackStatePending),
               navigationTransmitTask == nil
         else { return }
 
@@ -841,15 +877,19 @@ final class ESP32BLECentral: NSObject {
     }
 
     private func flushPendingNavigationState() {
-        guard protocolReady,
-              let codec,
-              let state = navigationState.takePending()
-        else { return }
+        guard protocolReady, let codec else { return }
+        guard let state = navigationState.takePending() else {
+            flushPendingBacktrack()
+            lastNavigationTransmitAtMs = Self.monotonicMs()
+            return
+        }
 
         // Take the newest immutable NavCore snapshot. Any update published
         // while encoding runs will become the next coalesced transmission.
         let geometrySignature = Self.routeGeometrySignature(for: state)
         do {
+            // End tombstone precedes any new Navigation geometry/snapshot.
+            if (backtrackState.state?.flags ?? 0) & 1 == 0 { flushPendingBacktrack() }
             // NavigationSnapshot is at most 211 bytes in v1, hence at most two
             // 182-byte GATT values. Use that conservative upper bound before
             // touching the stateful codec so queue-reset recovery does not
@@ -878,6 +918,7 @@ final class ESP32BLECentral: NSObject {
                 lastRouteGeometrySignature = nil
             }
             lastNavigationTransmitAtMs = Self.monotonicMs()
+            flushPendingBacktrack()
             flushPendingMapScene()
         } catch {
             // Preserve the newest state for the next protocol-ready session.
@@ -889,6 +930,24 @@ final class ESP32BLECentral: NSObject {
         if navigationState.pending != nil {
             scheduleNavigationTransmit()
         }
+    }
+
+    private func flushPendingBacktrack() {
+        guard protocolReady, peerCapabilities & (1 << 8) != 0,
+              let codec, let state = backtrackState.state else { return }
+        do {
+            if state.flags & 1 != 0,
+               let geometry = backtrackState.geometryInput(chunk: backtrackDelivery.chunk) {
+                guard backtrackDelivery.shouldSend(queuedFrames: outboundFrames.count) else { return }
+                let frames = try codec.encodeBacktrackGeometry(geometry)
+                backtrackDelivery.queued(frames: frames, sequence: codec.lastEncodedSequence)
+                try send(frames)
+                return // Page becomes eligible only after all chunks are acknowledged.
+            }
+            guard backtrackStatePending else { return }
+            try send(codec.encodeBacktrackState(state))
+            backtrackStatePending = false
+        } catch { recoverFromTransportError(error.localizedDescription) }
     }
 
     private func flushPendingMediaState() {
@@ -1011,6 +1070,7 @@ final class ESP32BLECentral: NSObject {
     }
 
     private func markMapFragmentWritten(_ frame: Data) {
+        backtrackDelivery.written(frame, nowMs: Self.monotonicMs())
         guard frame == mapSceneFinalFrame else { return }
         mapSceneFinalFrame = nil
         mapSceneDelivery.lastFragmentWritten(nowMs: Self.monotonicMs())
@@ -1066,6 +1126,11 @@ final class ESP32BLECentral: NSObject {
                 }
 
                 do {
+                    self.backtrackDelivery.expire(nowMs: now)
+                    if self.backtrackDelivery.timeoutCount >= 3 {
+                        self.recoverFromTransportError("原路返回几何传输未确认，正在重新连接")
+                        return
+                    }
                     self.mapSceneDelivery.expire(nowMs: now)
                     if self.mapSceneDelivery.timeoutCount >= 3 {
                         self.recoverFromTransportError("周边地图传输未确认，正在重新连接")
@@ -1077,6 +1142,7 @@ final class ESP32BLECentral: NSObject {
                             monotonicMs: sessionElapsed
                         )
                     )
+                    self.flushPendingBacktrack()
                     self.flushPendingMapScene()
                 } catch {
                     self.recoverFromTransportError(error.localizedDescription)
@@ -1448,6 +1514,14 @@ extension ESP32BLECentral: @preconcurrency CBPeripheralDelegate {
                 return
             }
             if let ack = inbound.acknowledgement {
+                if backtrackDelivery.acknowledge(sequence: ack.acknowledgedSequence, status: ack.status) {
+                    if backtrackDelivery.timeoutCount >= 3 {
+                        recoverFromTransportError("原路返回几何接收失败，正在重新连接")
+                        return
+                    }
+                    flushPendingBacktrack()
+                    return
+                }
                 if mapSceneDelivery.acknowledge(sequence: ack.acknowledgedSequence,
                                                 status: ack.status) {
                     trace("map acknowledged sequence=\(ack.acknowledgedSequence) status=\(ack.status)")

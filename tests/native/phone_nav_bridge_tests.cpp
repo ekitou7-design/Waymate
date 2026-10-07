@@ -637,9 +637,80 @@ void test_imu_presentation_preserves_40hz_phase_and_stale_course_is_ignored() {
   CHECK(moto::test::phone_nav_bridge_last_heading_deg() == before_stale);
 }
 
+void test_backtrack_geometry_state_ordering_tombstone_and_reconnect() {
+  moto::nav::NavPresenter presenter;
+  PhoneNavBridge bridge(presenter);
+  MusicSenderContext sender;
+  bridge.set_sender(record_music_sender, &sender);
+  bridge.install_ui_callbacks(); bridge.on_link_state(true);
+  moto::ble::BacktrackState state;
+  state.identity[0] = 1; state.generation = 1;
+  state.flags = moto::ble::BacktrackActive | moto::ble::BacktrackLocationValid;
+  state.target_distance_m = 42; state.remaining_distance_m = 2400;
+  state.progress_m = 15; state.direction_cdeg = 18000;
+  state.position = {36'000'000,117'000'000};
+  CHECK(bridge.on_message(make_message(state, 1)) == moto::ble::AckStatus::InvalidState);
+  moto::ble::BacktrackGeometry geometry;
+  geometry.identity = state.identity; geometry.generation = 1;
+  geometry.total_point_count = 30; geometry.chunk_count = 2;
+  for (int i=0;i<24;++i) geometry.points.push_back({{36'000'000+i*10,117'000'000+i*10}, static_cast<uint32_t>(i*5),static_cast<uint16_t>(i/15)});
+  CHECK(bridge.on_message(make_message(geometry, 2)) == moto::ble::AckStatus::Ok);
+  CHECK(bridge.on_message(make_message(geometry, 3)) == moto::ble::AckStatus::Duplicate);
+  CHECK(bridge.on_message(make_message(state, 4)) == moto::ble::AckStatus::InvalidState);
+  geometry.chunk_index = 1; geometry.first_point_index = 24; geometry.points.clear();
+  for(int i=24;i<30;++i) geometry.points.push_back({{36'000'000+i*10,117'000'000+i*10},static_cast<uint32_t>(i*5),2});
+  CHECK(bridge.on_message(make_message(geometry, 5)) == moto::ble::AckStatus::Ok);
+  CHECK(bridge.on_message(make_message(state, 6)) == moto::ble::AckStatus::Ok);
+  pump(bridge);
+  CHECK(presenter.backtrack_ui_state().active);
+  CHECK(presenter.backtrack_ui_state().point_count == 30);
+  CHECK(presenter.backtrack_ui_state().target_distance_m == 42);
+  CHECK(presenter.backtrack_ui_state().points[14].segment_index != presenter.backtrack_ui_state().points[15].segment_index);
+  CHECK(presenter.backtrack_ui_state().points[23].segment_index != presenter.backtrack_ui_state().points[24].segment_index);
+  CHECK(!presenter.ui_state().route_point_count);
+  moto::ble::RouteGeometry nav_geometry; nav_geometry.route_token = 9; nav_geometry.route_generation=1;
+  nav_geometry.total_point_count=2; nav_geometry.points={{36000000,117000000},{36000100,117000100}};
+  CHECK(bridge.on_message(make_message(nav_geometry, 7)) == moto::ble::AckStatus::InvalidState);
+  auto stale = state; stale.identity[15] = 1;
+  CHECK(bridge.on_message(make_message(stale, 8)) == moto::ble::AckStatus::InvalidState);
+  stale.generation = 0; // decoder validation, no state change
+  CHECK(bridge.on_message({moto::ble::MessageType::BacktrackState}) == moto::ble::AckStatus::Failed);
+  for (auto flag : {moto::ble::BacktrackOffTrack,moto::ble::BacktrackArrived}) {
+    state.flags |= flag;
+    CHECK(bridge.on_message(make_message(state, 9)) == moto::ble::AckStatus::Ok); pump(bridge);
+  }
+  CHECK(presenter.backtrack_ui_state().arrived);
+  state.flags &= ~moto::ble::BacktrackLocationValid;
+  CHECK(bridge.on_message(make_message(state, 10)) == moto::ble::AckStatus::Ok); pump(bridge);
+  CHECK(!presenter.backtrack_ui_state().location_valid);
+  // Disconnect clears display only. Phone republishes the same UUID/progress.
+  bridge.on_link_state(false); pump(bridge);
+  CHECK(!presenter.backtrack_ui_state().active);
+  bridge.on_link_state(true);
+  geometry.chunk_index=0; geometry.first_point_index=0; geometry.total_point_count=6; geometry.chunk_count=1;
+  CHECK(bridge.on_message(make_message(geometry, 11)) == moto::ble::AckStatus::Ok);
+  CHECK(bridge.on_message(make_message(state, 12)) == moto::ble::AckStatus::Ok); pump(bridge);
+  CHECK(presenter.backtrack_ui_state().progress_m == 15);
+  state.flags=0; state.display_page=moto::ble::DisplayPage::Speed;
+  CHECK(bridge.on_message(make_message(state, 13)) == moto::ble::AckStatus::Ok); pump(bridge);
+  CHECK(!presenter.backtrack_ui_state().active); CHECK(!presenter.backtrack_ui_state().point_count);
+  state.flags=moto::ble::BacktrackActive; state.display_page=moto::ble::DisplayPage::Backtrack;
+  CHECK(bridge.on_message(make_message(state, 14)) == moto::ble::AckStatus::InvalidState);
+  CHECK(bridge.on_message(make_message(geometry, 15)) == moto::ble::AckStatus::InvalidState);
+  // A distinct next session accepts only a newer generation.
+  geometry.generation=2; geometry.identity[0]=2;
+  CHECK(bridge.on_message(make_message(geometry, 16)) == moto::ble::AckStatus::Ok);
+  state.generation=2; state.identity=geometry.identity;
+  CHECK(bridge.on_message(make_message(state, 17)) == moto::ble::AckStatus::Ok); pump(bridge);
+  geometry.generation=1;
+  CHECK(bridge.on_message(make_message(geometry, 18)) == moto::ble::AckStatus::InvalidState);
+  CHECK(sender.commands.empty()); // No Start/End/media command replay on display resync.
+}
+
 }  // namespace
 
 int main() {
+  test_backtrack_geometry_state_ordering_tombstone_and_reconnect();
   test_sender_is_called_without_bridge_state_lock();
   test_navigation_and_touch_updates_are_serialized();
   test_ble_submission_never_waits_for_lvgl_and_retries_latest_state();

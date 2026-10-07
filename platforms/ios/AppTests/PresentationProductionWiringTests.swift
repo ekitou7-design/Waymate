@@ -22,7 +22,7 @@ final class PresentationProductionWiringTests: XCTestCase {
         XCTAssertEqual(RoundDisplayPage(primary: .ride), .speed)
         XCTAssertEqual(RoundDisplayPage(primary: .navigation), .navigation)
         XCTAssertEqual(RoundDisplayPage(primary: .media), .music)
-        XCTAssertEqual(RoundDisplayPage.allCases.map(\.rawValue), [0, 1, 2, 3])
+        XCTAssertEqual(RoundDisplayPage.allCases.map(\.rawValue), [0, 1, 2, 3, 4])
         let driver = driver()
         for _ in 0..<100 { driver.update(navigation: nil, rideActive: false) }
         XCTAssertEqual(pages, [.navigation])
@@ -302,7 +302,7 @@ final class PresentationProductionWiringTests: XCTestCase {
         for page in RoundDisplayPage.allCases {
             central.sendNavigationSnapshot(snapshot, displayPage: page)
             let input = central.makeSnapshotInput(snapshot, codec: codec)
-            XCTAssertEqual(input.displayPageName, page.protocolName)
+            XCTAssertEqual(input.displayPageName, page == .backtrack ? "speed" : page.protocolName)
             XCTAssertEqual(input.stateName, snapshot.stateName)
             XCTAssertEqual(input.routeGeneration, snapshot.routeGeneration)
             XCTAssertFalse(input.hasDestination)

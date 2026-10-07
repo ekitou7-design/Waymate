@@ -178,29 +178,29 @@ final class BacktrackPresentationTests: XCTestCase {
         d.onSelection = { self.pages.append($0) }
         return d
     }
-    func testBacktrackIsIndependentPrimaryWithExplicitV1SpeedFallback() {
+    func testBacktrackIsIndependentPrimaryWithIndependentRoundPage() {
         let d = driver()
         d.update(navigation: nil, rideActive: true, backtrack: state())
         XCTAssertEqual(d.currentDecision.primaryComponent, .backtrack)
         XCTAssertEqual(d.currentDecision.reason, .backtrackHome)
-        XCTAssertEqual(d.selectedPage, .speed)
-        XCTAssertEqual(RoundDisplayPage.allCases.map(\.rawValue), [0, 1, 2, 3])
+        XCTAssertEqual(d.selectedPage, .backtrack)
+        XCTAssertEqual(RoundDisplayPage.allCases.map(\.rawValue), [0, 1, 2, 3, 4])
     }
     func testManualCompassStaysAcrossOrdinaryUpdatesAndNewOffTrackReclaimsOnce() {
         let d = driver()
         d.update(navigation: nil, rideActive: true, backtrack: state())
         d.manuallySelect(rawValue: 2)
         for _ in 0..<100 { d.update(navigation: nil, rideActive: true, backtrack: state()) }
-        XCTAssertEqual(pages, [.speed, .compass])
+        XCTAssertEqual(pages, [.backtrack, .compass])
         d.update(navigation: nil, rideActive: true, backtrack: state(off: true, event: "off-1"))
-        XCTAssertEqual(pages, [.speed, .compass, .speed])
+        XCTAssertEqual(pages, [.backtrack, .compass, .backtrack])
         d.manuallySelect(rawValue: 2)
         for _ in 0..<100 { d.update(navigation: nil, rideActive: true, backtrack: state(off: true, event: "off-1")) }
         XCTAssertEqual(d.selectedPage, .compass)
         d.update(navigation: nil, rideActive: true, backtrack: state())
         XCTAssertEqual(d.selectedPage, .compass)
         d.update(navigation: nil, rideActive: true, backtrack: state(off: true, event: "off-2"))
-        XCTAssertEqual(d.selectedPage, .speed)
+        XCTAssertEqual(d.selectedPage, .backtrack)
     }
     func testMediaExpiryReevaluatesBacktrackAndOffTrackPreempts() {
         let d = driver()
@@ -213,9 +213,9 @@ final class BacktrackPresentationTests: XCTestCase {
         d.mediaInteracted(eventIdentity: "media-2")
         d.update(navigation: nil, rideActive: true, backtrack: state(off: true, event: "off-1"))
         XCTAssertEqual(d.currentDecision.reason, .backtrackOffTrack)
-        XCTAssertEqual(d.selectedPage, .speed)
+        XCTAssertEqual(d.selectedPage, .backtrack)
     }
-    func testReconnectKeepsLocalRouteAndProgressRestoresFallbackNotNavigation() throws {
+    func testReconnectKeepsLocalRouteAndProgressRestoresBacktrackNotNavigation() throws {
         var s = BacktrackSession(route: try BacktrackTestTrail.route())
         BacktrackTestTrail.feed(&s, 100, time: 0)
         BacktrackTestTrail.feed(&s, 90, time: 2)
@@ -227,7 +227,7 @@ final class BacktrackPresentationTests: XCTestCase {
         now = now.advanced(by: .seconds(6))
         d.resynchronize()
         XCTAssertEqual(d.currentDecision.primaryComponent, .backtrack)
-        XCTAssertEqual(d.selectedPage, .speed)
+        XCTAssertEqual(d.selectedPage, .backtrack)
         XCTAssertEqual(s, saved)
         XCTAssertNil(d.currentDecision.temporaryExpiry)
     }
@@ -241,7 +241,7 @@ final class BacktrackPresentationTests: XCTestCase {
         XCTAssertEqual(d.selectedPage, .compass)
         d.update(navigation: nil, rideActive: true, backtrack: state(arrived: true))
         XCTAssertEqual(d.currentDecision.reason, .backtrackArrived)
-        XCTAssertEqual(d.selectedPage, .compass)
+        XCTAssertEqual(d.selectedPage, .backtrack)
         d.update(navigation: nil, rideActive: true)
         XCTAssertEqual(d.currentDecision.primaryComponent, .ride)
     }

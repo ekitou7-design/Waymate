@@ -77,6 +77,9 @@ enum PresentationCoordinator {
             return result
         }
 
+        if let backtrack = input.backtrack, backtrack.arrived {
+            return decision(.backtrack, .backtrackArrived)
+        }
         if let media = input.mediaInteraction,
            now >= media.startedAt, now < media.expiry {
             return PresentationDecision(

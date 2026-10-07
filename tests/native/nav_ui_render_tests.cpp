@@ -7,6 +7,7 @@
 
 #include <lvgl.h>
 
+#include <chrono>
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -294,6 +295,64 @@ void check_tabular_number(lv_obj_t *object, const char *text) {
   }
   for(unsigned i = 0; i < lv_obj_get_child_count(object); ++i)
     check_tabular_number(lv_obj_get_child(object, i), text);
+}
+
+void test_backtrack_product_states() {
+  moto_nav_ui_create();
+  moto_nav_ui_set_reduce_motion(1);
+  moto_nav_ui_set_phone_connection(MOTO_UI_PHONE_ONLINE);
+  pump(220);
+  moto_ui_backtrack_state_t s{};
+  s.active=1; s.location_valid=1; s.target_distance_m=42; s.remaining_distance_m=2400;
+  s.direction_cdeg=9000; s.progress_m=20; s.point_count=6;
+  s.points[0]={{30,80},0,0}; s.points[1]={{70,50},20,0}; s.points[2]={{105,70},40,0};
+  s.points[3]={{160,50},40,1}; s.points[4]={{205,30},60,1}; s.points[5]={{250,60},80,1};
+  s.marker={70,50};
+  const auto render = [&]() { moto_nav_ui_set_backtrack_state(&s); moto_nav_ui_set_page(MOTO_UI_PAGE_BACKTRACK); };
+  render(); export_preview("backtrack-normal");
+  CHECK(has_visible_label(lv_screen_active(), "BACKTRACK"));
+  CHECK(has_visible_label(lv_screen_active(), "42 m"));
+  CHECK(has_visible_label(lv_screen_active(), "FOLLOW TRAIL"));
+  CHECK(has_visible_label(lv_screen_active(), "2.4 km remaining"));
+  auto *title=find_visible_label(lv_screen_active(), "BACKTRACK");
+  for(const auto *text : {"BACKTRACK", "OFF TRACK", "START REACHED", "FOLLOW TRAIL", "42 m", "2.4 km"}) {
+    for(const char *p=text; *p; ++p) {
+      lv_font_glyph_dsc_t glyph{};
+      CHECK(lv_font_get_glyph_dsc(lv_obj_get_style_text_font(title,LV_PART_MAIN), &glyph, *p, 0));
+    }
+  }
+  const auto gap=capture();
+  s.points[3].segment_index=0; render(); const auto connected=capture();
+  CHECK(gap.hash != connected.hash);
+  s.points[3].segment_index=1; render(); CHECK(capture().hash == gap.hash);
+  export_preview("backtrack-route-gap");
+  s.off_track=1; render(); export_preview("backtrack-off-track");
+  CHECK(has_visible_label(lv_screen_active(), "RETURN TO TRAIL"));
+  s.off_track=0; s.arrived=1; s.remaining_distance_m=0; render(); export_preview("backtrack-arrived");
+  CHECK(has_visible_label(lv_screen_active(), "START REACHED"));
+  CHECK(has_visible_label(lv_screen_active(), "RIDE STILL ACTIVE"));
+  s.arrived=0; s.location_valid=0; render(); export_preview("backtrack-invalid-location");
+  CHECK(has_visible_label(lv_screen_active(), "WAITING FOR GPS"));
+  CHECK(has_visible_label(lv_screen_active(), "--"));
+  s.location_valid=1; s.target_distance_m=UINT32_MAX; s.remaining_distance_m=1234567; render(); export_preview("backtrack-long-remaining");
+  CHECK(has_visible_label(lv_screen_active(), "1235 km remaining"));
+  CHECK(has_visible_label(lv_screen_active(), "--"));
+  export_preview("backtrack-unknown-target");
+  s.trail_gap=1; render(); export_preview("backtrack-trail-gap");
+  s.trail_gap=0; s.paused=1; s.location_valid=0; render(); export_preview("backtrack-paused");
+  CHECK(has_visible_label(lv_screen_active(), "RIDE PAUSED"));
+  s.paused=0; s.geometry_unavailable=1; s.point_count=0; render(); export_preview("backtrack-geometry-unavailable");
+  CHECK(has_visible_label(lv_screen_active(), "TRAIL TOO LARGE"));
+  s.geometry_unavailable=0; s.location_valid=1;
+  s.point_count=MOTO_UI_BACKTRACK_POINT_CAPACITY;
+  for(uint16_t i=0;i<s.point_count;++i) s.points[i]={{static_cast<int16_t>(10+i),static_cast<int16_t>(20+(i%5)*12)},static_cast<uint32_t>(i*5),static_cast<uint16_t>(i/64)};
+  const auto begin=std::chrono::steady_clock::now();
+  for(int i=0;i<100;++i) { s.progress_m=i*5; render(); pump(5); }
+  const auto elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();
+  std::cout << "[BacktrackRenderer] 256 points / 4 segments / 100 projected frames ms=" << elapsed << " ui_bytes=" << sizeof(s) << '\n';
+  export_preview("backtrack-capacity");
+  lv_mem_monitor_t memory{}; lv_mem_monitor(&memory);
+  std::cout << "[BacktrackRenderer] LVGL used=" << memory.total_size-memory.free_size << " peak=" << memory.max_used << " bytes\n";
 }
 
 void test_stage_c_product_states() {
@@ -799,6 +858,7 @@ int main(int argc, char **argv) {
   test_diagonal_map_pixels_are_independent_of_partial_buffer_height();
 
   test_stage_c_product_states();
+  test_backtrack_product_states();
 
   // Terminal screens run last: they tear the full UI down.
   moto_nav_ui_show_boot_screen();

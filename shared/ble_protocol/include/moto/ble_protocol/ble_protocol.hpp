@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -116,6 +117,8 @@ enum class MessageType : std::uint8_t {
   TrafficDeviation = 0x12,
   MediaState = 0x13,
   MapScene = 0x14,
+  BacktrackState = 0x15,
+  BacktrackGeometry = 0x16,
   DeviceCommand = 0x20,
 };
 
@@ -273,6 +276,7 @@ enum Capability : std::uint32_t {
   CapabilityMusicCommands = 1U << 5U,
   CapabilityCommandAck = 1U << 6U,
   CapabilityMapScene = 1U << 7U,
+  CapabilityBacktrack = 1U << 8U,
 };
 
 struct ConnectionStatus {
@@ -356,6 +360,7 @@ enum class DisplayPage : std::uint8_t {
   Speed = 1,
   Compass = 2,
   Music = 3,
+  Backtrack = 4,
 };
 
 enum NavigationFlag : std::uint16_t {
@@ -426,6 +431,52 @@ struct RouteGeometry {
   std::vector<GeoPointE6> points;
 
   bool operator==(const RouteGeometry& rhs) const noexcept;
+};
+
+// Additive v1 display projection. UUID is not a Navigation route token.
+using BacktrackIdentity = std::array<std::uint8_t, 16>;
+constexpr std::size_t kMaxBacktrackPoints = 256;
+constexpr std::uint32_t kUnknownBacktrackDistance = 0xFFFF'FFFFU;
+constexpr std::uint16_t kUnknownBacktrackDirection = 0xFFFFU;
+enum BacktrackFlag : std::uint16_t {
+  BacktrackActive = 1U << 0U,
+  BacktrackOffTrack = 1U << 1U,
+  BacktrackArrived = 1U << 2U,
+  BacktrackLocationValid = 1U << 3U,
+  BacktrackRelativeDirection = 1U << 4U,
+  BacktrackTrailGap = 1U << 5U,
+  BacktrackPaused = 1U << 6U,
+  BacktrackGeometryUnavailable = 1U << 7U,
+};
+struct BacktrackState {
+  BacktrackIdentity identity{};
+  std::uint32_t generation = 0;
+  std::uint16_t flags = 0;
+  DisplayPage display_page = DisplayPage::Backtrack;
+  std::uint32_t remaining_distance_m = 0;
+  std::uint32_t target_distance_m = kUnknownBacktrackDistance;
+  std::uint32_t progress_m = 0;
+  std::uint16_t target_bearing_cdeg = kUnknownBacktrackDirection;
+  // Clockwise angle from forward, or north when relative flag is absent.
+  std::uint16_t direction_cdeg = kUnknownBacktrackDirection;
+  GeoPointE6 position;
+  bool operator==(const BacktrackState& rhs) const noexcept;
+};
+struct BacktrackPoint {
+  GeoPointE6 coordinate;
+  std::uint32_t progress_m = 0; // Original trail cumulative distance, not simplified length.
+  std::uint16_t segment_index = 0; // Different indices MUST NOT be connected.
+  bool operator==(const BacktrackPoint& rhs) const noexcept;
+};
+struct BacktrackGeometry {
+  BacktrackIdentity identity{};
+  std::uint32_t generation = 0;
+  std::uint16_t chunk_index = 0;
+  std::uint16_t chunk_count = 1;
+  std::uint16_t first_point_index = 0;
+  std::uint16_t total_point_count = 0;
+  std::vector<BacktrackPoint> points;
+  bool operator==(const BacktrackGeometry& rhs) const noexcept;
 };
 
 enum TrafficDeviationFlag : std::uint16_t {
@@ -560,7 +611,9 @@ using Message = std::variant<ConnectionStatus,
                              TrafficDeviation,
                              MediaState,
                              MapScene,
-                             DeviceCommand>;
+                             DeviceCommand,
+                             BacktrackState,
+                             BacktrackGeometry>;
 
 using MessageResult = Result<Message>;
 

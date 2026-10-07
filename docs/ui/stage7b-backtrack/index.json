@@ -1,0 +1,23 @@
+{
+  "source": "tests/native/nav_ui_render_tests.cpp::test_backtrack_product_states",
+  "renderer": "real shared/nav_ui LVGL RGB565 framebuffer; test fixtures only",
+  "size": [
+    466,
+    466
+  ],
+  "clipping": "nominal circle mask; hardware optical/touch acceptance remains",
+  "frames": [
+    "backtrack-arrived.png",
+    "backtrack-capacity.png",
+    "backtrack-geometry-unavailable.png",
+    "backtrack-invalid-location.png",
+    "backtrack-long-remaining.png",
+    "backtrack-normal.png",
+    "backtrack-off-track.png",
+    "backtrack-paused.png",
+    "backtrack-route-gap.png",
+    "backtrack-trail-gap.png",
+    "backtrack-unknown-target.png"
+  ],
+  "contact_sheet": "contact-sheet.png"
+}

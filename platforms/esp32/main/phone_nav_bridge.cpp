@@ -215,12 +215,14 @@ moto::nav::DisplayPage map_page(moto::ble::DisplayPage page) {
     case In::Speed: return Out::Speed;
     case In::Compass: return Out::Compass;
     case In::Music: return Out::Music;
+    case In::Backtrack: return Out::Speed; // Legacy NavCore mapping is never the Backtrack page.
   }
   return Out::Navigation;
 }
 
 moto::ble::DisplayPage map_page(moto_ui_page_t page) {
   switch (page) {
+    case MOTO_UI_PAGE_BACKTRACK: return moto::ble::DisplayPage::Backtrack;
     case MOTO_UI_PAGE_SPEED: return moto::ble::DisplayPage::Speed;
     case MOTO_UI_PAGE_COMPASS: return moto::ble::DisplayPage::Compass;
     case MOTO_UI_PAGE_MUSIC: return moto::ble::DisplayPage::Music;
@@ -332,6 +334,11 @@ void PhoneNavBridge::on_link_state(bool active) {
       phone_snapshot.network = moto::nav::NetworkState::Connecting;
     } else {
       phone_session_id_ = 0;
+      backtrack_ = {};
+      backtrack_points_.clear();
+      backtrack_geometry_complete_ = false;
+      backtrack_geometry_generation_ = 0;
+      if (selected_page_ == MOTO_UI_PAGE_BACKTRACK) selected_page_ = MOTO_UI_PAGE_NAVIGATION;
       phone_snapshot.network = moto::nav::NetworkState::Offline;
       phone_snapshot.gnss_stale = true;
       phone_snapshot.has_usable_fix = false;
@@ -552,6 +559,10 @@ moto::ble::AckStatus PhoneNavBridge::on_message(
         } else if constexpr (
             std::is_same_v<T, moto::ble::NavigationSnapshot>) {
           consume_navigation(value);
+        } else if constexpr (std::is_same_v<T, moto::ble::BacktrackState>) {
+          return consume_backtrack(value);
+        } else if constexpr (std::is_same_v<T, moto::ble::BacktrackGeometry>) {
+          return consume_backtrack_geometry(value);
         } else if constexpr (std::is_same_v<T, moto::ble::RouteGeometry>) {
           return consume_geometry(value);
         } else if constexpr (
@@ -571,6 +582,73 @@ moto::ble::AckStatus PhoneNavBridge::on_message(
         return moto::ble::AckStatus::Ok;
       },
       decoded.value);
+}
+
+moto::ble::AckStatus PhoneNavBridge::consume_backtrack_geometry(const moto::ble::BacktrackGeometry& input) {
+  const std::lock_guard<std::mutex> lock(state_mutex_);
+  const auto current = std::max(backtrack_.generation, backtrack_geometry_generation_);
+  if (input.generation < current ||
+      (input.generation == backtrack_.generation &&
+       (input.identity != backtrack_.identity || (backtrack_.flags & moto::ble::BacktrackActive) == 0))) {
+    return moto::ble::AckStatus::InvalidState;
+  }
+  if (input.generation == backtrack_geometry_generation_ && input.identity != backtrack_geometry_identity_)
+    return moto::ble::AckStatus::InvalidState;
+  if (input.generation == backtrack_geometry_generation_ && input.chunk_index < backtrack_next_chunk_) {
+    if (input.total_point_count != backtrack_total_points_ ||
+        input.first_point_index + input.points.size() > backtrack_points_.size()) return moto::ble::AckStatus::InvalidState;
+    return std::equal(input.points.begin(), input.points.end(), backtrack_points_.begin() + input.first_point_index)
+        ? moto::ble::AckStatus::Duplicate : moto::ble::AckStatus::InvalidState;
+  }
+  if (input.chunk_index == 0) {
+    backtrack_geometry_identity_ = input.identity;
+    backtrack_geometry_generation_ = input.generation;
+    backtrack_points_.clear();
+    backtrack_points_.reserve(input.total_point_count);
+    backtrack_total_points_ = input.total_point_count;
+    backtrack_next_chunk_ = 0;
+    backtrack_geometry_complete_ = false;
+  }
+  if (input.generation != backtrack_geometry_generation_ || input.identity != backtrack_geometry_identity_ ||
+      input.chunk_index != backtrack_next_chunk_ || input.total_point_count != backtrack_total_points_ ||
+      input.first_point_index != backtrack_points_.size()) return moto::ble::AckStatus::InvalidState;
+  if (!backtrack_points_.empty() && (input.points.front().progress_m < backtrack_points_.back().progress_m ||
+      input.points.front().segment_index < backtrack_points_.back().segment_index)) return moto::ble::AckStatus::InvalidState;
+  backtrack_points_.insert(backtrack_points_.end(), input.points.begin(), input.points.end());
+  ++backtrack_next_chunk_;
+  backtrack_geometry_complete_ = backtrack_next_chunk_ == input.chunk_count && backtrack_points_.size() == backtrack_total_points_;
+  return moto::ble::AckStatus::Ok;
+}
+
+moto::ble::AckStatus PhoneNavBridge::consume_backtrack(const moto::ble::BacktrackState& input) {
+  {
+    const std::lock_guard<std::mutex> lock(state_mutex_);
+    const auto current = std::max(backtrack_.generation, backtrack_geometry_generation_);
+    if (input.generation < current ||
+        (input.generation == backtrack_.generation && (input.identity != backtrack_.identity ||
+         ((backtrack_.flags & moto::ble::BacktrackActive) == 0 && (input.flags & moto::ble::BacktrackActive) != 0))))
+      return moto::ble::AckStatus::InvalidState;
+    if (input.generation == backtrack_geometry_generation_ && input.identity != backtrack_geometry_identity_)
+      return moto::ble::AckStatus::InvalidState;
+    const bool active = (input.flags & moto::ble::BacktrackActive) != 0;
+    if (active && (input.flags & moto::ble::BacktrackGeometryUnavailable) == 0 &&
+        (!backtrack_geometry_complete_ || input.generation != backtrack_geometry_generation_ ||
+         input.identity != backtrack_geometry_identity_)) return moto::ble::AckStatus::InvalidState;
+    backtrack_ = input;
+    selected_page_ = static_cast<moto_ui_page_t>(input.display_page);
+    if (active) {
+      demo_active_ = false;
+      geometry_ = {};
+      snapshot_.has_route_view = false;
+      snapshot_.route_view_point_count = 0;
+      clear_map_context(snapshot_);
+    } else {
+      backtrack_points_.clear();
+      backtrack_geometry_complete_ = false;
+    }
+  }
+  present_navigation();
+  return moto::ble::AckStatus::Ok;
 }
 
 void PhoneNavBridge::consume_navigation(
@@ -608,6 +686,9 @@ void PhoneNavBridge::consume_navigation(
     phone_snapshot.state = map_state(input.state);
     phone_snapshot.network = map_network(input.network);
     phone_snapshot.display_page = map_page(input.display_page);
+    if ((backtrack_.flags & moto::ble::BacktrackActive) == 0) {
+      selected_page_ = static_cast<moto_ui_page_t>(input.display_page);
+    }
     phone_snapshot.has_destination = has_flag(
         input.flags, moto::ble::NavigationHasDestination);
     phone_snapshot.has_usable_fix = has_usable_fix;
@@ -693,6 +774,7 @@ moto::ble::AckStatus PhoneNavBridge::consume_geometry(
 
   {
     const std::lock_guard<std::mutex> lock(state_mutex_);
+    if ((backtrack_.flags & moto::ble::BacktrackActive) != 0) return moto::ble::AckStatus::InvalidState;
     if (input.chunk_index == 0) {
       geometry_ = {};
       geometry_.active = true;
@@ -934,6 +1016,9 @@ void PhoneNavBridge::render_pending() {
     const std::lock_guard<std::mutex> lock(state_mutex_);
     if (navigation || motion) {
       render_snapshot_ = snapshot_;
+      render_selected_page_ = selected_page_;
+      render_backtrack_ = backtrack_;
+      render_backtrack_points_ = backtrack_points_;
     }
     if (navigation) {
       render_phone_connection_ = ui_phone_connection_;
@@ -950,6 +1035,7 @@ void PhoneNavBridge::render_pending() {
   // display mutex so the LVGL worker can finish the previous flush in parallel.
   if (navigation || motion) {
     presenter_.update(render_snapshot_);
+    presenter_.update_backtrack(render_backtrack_, render_backtrack_points_);
   }
 
   // The BLE worker has already returned before this point in firmware. The
@@ -969,9 +1055,14 @@ void PhoneNavBridge::render_pending() {
     moto_nav_ui_set_demo_active(render_demo_active_ ? 1U : 0U);
     moto_nav_ui_set_music_page_enabled(
         render_music_page_enabled_ ? 1U : 0U);
-    presenter_.apply_to_lvgl();
+    moto_nav_ui_set_backtrack_state(&presenter_.backtrack_ui_state());
+    auto ui_state = presenter_.ui_state();
+    ui_state.page = render_selected_page_;
+    moto_nav_ui_set_state(&ui_state);
   } else if (motion) {
-    moto_nav_ui_set_motion_state(&presenter_.ui_state());
+    auto ui_state = presenter_.ui_state();
+    ui_state.page = render_selected_page_;
+    moto_nav_ui_set_motion_state(&ui_state);
   }
   if (media) {
     moto_music_state_t state{};
@@ -1008,7 +1099,8 @@ void PhoneNavBridge::page_changed(moto_ui_page_t page, void* context) {
   auto* self = static_cast<PhoneNavBridge*>(context);
   {
     const std::lock_guard<std::mutex> lock(self->state_mutex_);
-    self->snapshot_.display_page = map_nav_page(page);
+    self->selected_page_ = page;
+    if (page != MOTO_UI_PAGE_BACKTRACK) self->snapshot_.display_page = map_nav_page(page);
   }
   self->present_navigation();
   self->send_page_command(page);

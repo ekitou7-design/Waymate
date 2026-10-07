@@ -209,6 +209,11 @@ struct Ui {
     void *page_callback_context = nullptr;
     moto_demo_change_callback_t demo_callback = nullptr;
     void *demo_callback_context = nullptr;
+    lv_obj_t *backtrack_title = nullptr, *backtrack_distance = nullptr;
+    lv_obj_t *backtrack_hint = nullptr, *backtrack_remaining = nullptr;
+    lv_obj_t *backtrack_basis = nullptr, *backtrack_map = nullptr, *backtrack_arrow = nullptr;
+    lv_point_precise_t backtrack_arrow_points[5]{};
+    moto_ui_backtrack_state_t backtrack{};
     bool music_page_enabled = true;
     bool demo_active = false;
     bool reduce_motion = false;
@@ -439,8 +444,10 @@ void update_page_dots() {
         lv_obj_set_size(ui.page_dots[i], px(active ? 16 : 5), px(5));
         lv_obj_set_style_radius(ui.page_dots[i], px(3), 0);
         lv_obj_set_style_bg_color(ui.page_dots[i], active ? kWhite : kGraphite, 0);
-        lv_obj_set_x(ui.page_dots[i], px(145 + i * 22 - (active ? 5 : 0)));
-        const bool available = i != MOTO_UI_PAGE_MUSIC || ui.music_page_enabled;
+        lv_obj_set_x(ui.page_dots[i], px(145 + (i == MOTO_UI_PAGE_BACKTRACK ? 0 : i) * 22 - (active ? 5 : 0)));
+        const bool available = (i != MOTO_UI_PAGE_MUSIC || ui.music_page_enabled) &&
+            (i != MOTO_UI_PAGE_BACKTRACK || ui.backtrack.active) &&
+            (i != MOTO_UI_PAGE_NAVIGATION || !ui.backtrack.active);
         if(ui.page_dots_visible && available) {
             lv_obj_remove_flag(ui.page_dots[i], LV_OBJ_FLAG_HIDDEN);
         } else {
@@ -485,6 +492,7 @@ void show_page(moto_ui_page_t page, bool reveal_on_same_page = false) {
     if(page == MOTO_UI_PAGE_MUSIC && !ui.music_page_enabled) {
         page = MOTO_UI_PAGE_NAVIGATION;
     }
+    if(page == MOTO_UI_PAGE_BACKTRACK && !ui.backtrack.active) page = MOTO_UI_PAGE_NAVIGATION;
     const bool changed = page != ui.page;
     ui.page = page;
     for(int i = 0; i < MOTO_UI_PAGE_COUNT; ++i) {
@@ -504,19 +512,16 @@ void gesture_event(lv_event_t *) {
     lv_indev_t *indev = lv_indev_active();
     if(indev == nullptr) return;
     const lv_dir_t direction = lv_indev_get_gesture_dir(indev);
-    int next = static_cast<int>(ui.page);
-    if(direction == LV_DIR_LEFT) {
-        next = (next + 1) % MOTO_UI_PAGE_COUNT;
-    } else if(direction == LV_DIR_RIGHT) {
-        next = (next + MOTO_UI_PAGE_COUNT - 1) % MOTO_UI_PAGE_COUNT;
-    } else {
-        return;
-    }
-    if(!ui.music_page_enabled && next == MOTO_UI_PAGE_MUSIC) {
-        next = direction == LV_DIR_LEFT ? MOTO_UI_PAGE_NAVIGATION
-                                        : MOTO_UI_PAGE_COMPASS;
-    }
-    const auto requested = static_cast<moto_ui_page_t>(next);
+    if(direction != LV_DIR_LEFT && direction != LV_DIR_RIGHT) return;
+    const moto_ui_page_t order[] = {
+        ui.backtrack.active ? MOTO_UI_PAGE_BACKTRACK : MOTO_UI_PAGE_NAVIGATION,
+        MOTO_UI_PAGE_SPEED, MOTO_UI_PAGE_COMPASS, MOTO_UI_PAGE_MUSIC};
+    int index = 0;
+    for(int i = 0; i < 4; ++i) if(order[i] == ui.page) index = i;
+    const int step = direction == LV_DIR_LEFT ? 1 : -1;
+    int next = (index + step + 4) % 4;
+    if(order[next] == MOTO_UI_PAGE_MUSIC && !ui.music_page_enabled) next = (next + step + 4) % 4;
+    const auto requested = order[next];
     if(ui.page_callback != nullptr) {
         ui.page_callback(requested, ui.page_callback_context);
     } else {
@@ -1818,6 +1823,110 @@ void create_navigation_page() {
     ui.lifecycle_target = LifecycleVisual::PhoneOffline;
 }
 
+void draw_backtrack_map(lv_event_t *event) {
+    if(lv_event_get_code(event) != LV_EVENT_DRAW_MAIN) return;
+    const auto& s = ui.backtrack;
+    lv_layer_t *layer = lv_event_get_layer(event);
+    lv_area_t area;
+    lv_obj_get_coords(ui.backtrack_map, &area);
+    lv_draw_line_dsc_t line;
+    lv_draw_line_dsc_init(&line);
+    line.width = 3; line.round_start = 1; line.round_end = 1;
+    const auto pixel = [&](moto_ui_point_t p) -> lv_point_precise_t { return {static_cast<lv_value_precise_t>(area.x1 + p.x), static_cast<lv_value_precise_t>(area.y1 + p.y)}; };
+    const auto draw = [&](moto_ui_point_t a, moto_ui_point_t b, lv_color_t color) {
+        line.p1 = pixel(a); line.p2 = pixel(b); line.color = color;
+        draw_map_line(layer, line);
+    };
+    for(uint16_t i = 1; i < s.point_count; ++i) {
+        const auto& a = s.points[i-1]; const auto& b = s.points[i];
+        if(a.segment_index != b.segment_index) continue;
+        if(b.progress_m <= s.progress_m) draw(a.pixel, b.pixel, kGraphite);
+        else if(a.progress_m >= s.progress_m || b.progress_m == a.progress_m) draw(a.pixel, b.pixel, kIce);
+        else {
+            const double f = static_cast<double>(s.progress_m - a.progress_m) / (b.progress_m - a.progress_m);
+            const moto_ui_point_t mid{static_cast<int16_t>(std::lround(a.pixel.x + (b.pixel.x-a.pixel.x)*f)),
+                                      static_cast<int16_t>(std::lround(a.pixel.y + (b.pixel.y-a.pixel.y)*f))};
+            draw(a.pixel, mid, kGraphite); draw(mid, b.pixel, kIce);
+        }
+    }
+    // Singleton breadcrumb runs remain visible without inventing a connecting edge.
+    for(uint16_t i = 0; i < s.point_count; ++i) {
+        const bool before = i && s.points[i-1].segment_index == s.points[i].segment_index;
+        const bool after = i+1 < s.point_count && s.points[i+1].segment_index == s.points[i].segment_index;
+        if(!before && !after) draw(s.points[i].pixel, s.points[i].pixel, kIce);
+    }
+    if(s.location_valid && s.marker.x >= 0 && s.marker.x < 284 && s.marker.y >= 0 && s.marker.y < 106) {
+        auto a = s.marker, b = s.marker; a.x -= 3; b.x += 3;
+        line.width = 7; draw(a, b, kWhite);
+    }
+}
+
+void backtrack_distance(char *output, std::size_t size, uint32_t metres) {
+    if(metres == UINT32_MAX) std::snprintf(output, size, "--");
+    else if(metres < 1000) std::snprintf(output, size, "%lu m", static_cast<unsigned long>(metres));
+    else if(metres < 100000) std::snprintf(output, size, "%.1f km", metres / 1000.0);
+    else std::snprintf(output, size, "%.0f km", metres / 1000.0);
+}
+
+void update_backtrack() {
+    const auto& s = ui.backtrack;
+    const lv_color_t color = s.off_track ? kAmber : kIce;
+    lv_label_set_text(ui.backtrack_title, s.arrived ? "START REACHED" : s.off_track ? "OFF TRACK" : "BACKTRACK");
+    lv_obj_set_style_text_color(ui.backtrack_title, color, 0);
+    const char *hint = s.arrived ? "RIDE STILL ACTIVE" : s.paused ? "RIDE PAUSED" :
+        !s.location_valid ? "WAITING FOR GPS" : s.off_track ? "RETURN TO TRAIL" : s.trail_gap ? "TRAIL GAP" : "FOLLOW TRAIL";
+    lv_label_set_text(ui.backtrack_hint, hint);
+    lv_obj_set_style_text_color(ui.backtrack_hint, color, 0);
+    char text[40];
+    backtrack_distance(text, sizeof(text), s.location_valid && !s.arrived ? s.target_distance_m : UINT32_MAX);
+    lv_label_set_text(ui.backtrack_distance, s.arrived ? "START" : text);
+    backtrack_distance(text, sizeof(text), s.remaining_distance_m);
+    lv_label_set_text_fmt(ui.backtrack_remaining, "%s remaining", text);
+    lv_label_set_text(ui.backtrack_basis, s.geometry_unavailable ? "TRAIL TOO LARGE" :
+        !s.location_valid ? "DIRECTION UNAVAILABLE" : s.relative_direction ? "RELATIVE / MAP NORTH UP" : "NORTH UP");
+    const bool arrow = s.location_valid && !s.arrived && s.direction_cdeg != UINT16_MAX;
+    if(arrow) {
+        lv_obj_remove_flag(ui.backtrack_arrow, LV_OBJ_FLAG_HIDDEN);
+        const double angle = s.direction_cdeg / 100.0 * kPi / 180;
+        const int shape[5][2] = {{-16,0},{0,-19},{16,0},{0,-19},{0,21}};
+        for(int i = 0; i < 5; ++i) {
+            ui.backtrack_arrow_points[i] = {
+                static_cast<lv_value_precise_t>(px(25.0 + shape[i][0]*std::cos(angle)-shape[i][1]*std::sin(angle))),
+                static_cast<lv_value_precise_t>(px(25.0 + shape[i][0]*std::sin(angle)+shape[i][1]*std::cos(angle)))};
+        }
+        lv_line_set_points(ui.backtrack_arrow, ui.backtrack_arrow_points, 5);
+        lv_obj_set_style_line_color(ui.backtrack_arrow, color, 0);
+    } else lv_obj_add_flag(ui.backtrack_arrow, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_invalidate(ui.backtrack_map);
+}
+
+void create_backtrack_page() {
+    lv_obj_t *page = ui.pages[MOTO_UI_PAGE_BACKTRACK];
+    const auto label = [&](const lv_font_t *font, lv_color_t color, int y, const char *text) {
+        lv_obj_t *object = make_label(page, font, color, text);
+        lv_obj_set_width(object, px(250));
+        lv_obj_set_style_text_align(object, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(object, LV_ALIGN_TOP_MID, 0, px(y));
+        return object;
+    };
+    ui.backtrack_title = label(&primary_font, kIce, 35, "BACKTRACK");
+    ui.backtrack_arrow = lv_line_create(page);
+    lv_obj_set_size(ui.backtrack_arrow, px(50), px(50));
+    lv_obj_align(ui.backtrack_arrow, LV_ALIGN_TOP_MID, 0, px(76));
+    lv_obj_set_style_line_width(ui.backtrack_arrow, px(4), 0);
+    lv_obj_set_style_line_rounded(ui.backtrack_arrow, true, 0);
+    ui.backtrack_distance = label(&primary_font, kWhite, 128, "--");
+    ui.backtrack_hint = label(&tertiary_font, kIce, 160, "WAITING FOR GPS");
+    ui.backtrack_basis = label(&tertiary_font, kQuiet, 185, "NORTH UP");
+    ui.backtrack_map = lv_obj_create(page);
+    lv_obj_remove_style_all(ui.backtrack_map);
+    lv_obj_set_size(ui.backtrack_map, 284, 106);
+    lv_obj_align(ui.backtrack_map, LV_ALIGN_TOP_MID, 0, px(209));
+    lv_obj_remove_flag(ui.backtrack_map, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(ui.backtrack_map, draw_backtrack_map, LV_EVENT_DRAW_MAIN, nullptr);
+    ui.backtrack_remaining = label(&secondary_font, kWhite, 297, "-- remaining");
+}
+
 void create_speed_page() {
     lv_obj_t *page = ui.pages[MOTO_UI_PAGE_SPEED];
     ui.speed_arc = lv_arc_create(page);
@@ -2076,6 +2185,7 @@ extern "C" void moto_nav_ui_create(void) {
     create_speed_page();
     create_compass_page();
     create_music_page();
+    create_backtrack_page();
     for(int i = 1; i < MOTO_UI_PAGE_COUNT; ++i) {
         ui.connection_status[i] = make_label(ui.pages[i], &tertiary_font, kAmber, "");
         lv_obj_align(ui.connection_status[i], LV_ALIGN_BOTTOM_MID, 0, px(-27));
@@ -2114,9 +2224,18 @@ extern "C" void moto_nav_ui_set_state(const moto_ui_state_t *state) {
         case MOTO_UI_PAGE_NAVIGATION: update_navigation(state); break;
         case MOTO_UI_PAGE_SPEED: update_speedometer(state); break;
         case MOTO_UI_PAGE_COMPASS: update_compass(state); break;
+        case MOTO_UI_PAGE_BACKTRACK: update_backtrack(); break;
         case MOTO_UI_PAGE_MUSIC:
         case MOTO_UI_PAGE_COUNT: break;
     }
+}
+
+extern "C" void moto_nav_ui_set_backtrack_state(const moto_ui_backtrack_state_t *state) {
+    if(state == nullptr || ui.screen == nullptr) return;
+    ui.backtrack = *state;
+    ui.backtrack.point_count = std::min<uint16_t>(state->point_count, MOTO_UI_BACKTRACK_POINT_CAPACITY);
+    if(ui.page == MOTO_UI_PAGE_BACKTRACK) update_backtrack();
+    update_page_dots();
 }
 
 extern "C" void moto_nav_ui_set_motion_state(const moto_ui_state_t *state) {
@@ -2174,7 +2293,10 @@ extern "C" void moto_nav_ui_set_reduce_motion(uint8_t reduce_motion) {
 }
 
 extern "C" void moto_nav_ui_set_page(moto_ui_page_t page) {
-    if(ui.screen != nullptr) show_page(page, true);
+    if(ui.screen != nullptr) {
+        show_page(page, true);
+        if(ui.page == MOTO_UI_PAGE_BACKTRACK) update_backtrack();
+    }
 }
 
 extern "C" moto_ui_page_t moto_nav_ui_get_page(void) {

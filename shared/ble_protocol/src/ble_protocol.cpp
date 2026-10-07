@@ -475,10 +475,37 @@ Error validate(const MapScene& value) {
 }
 
 Error validate(const DeviceCommand& value) {
-  if (!valid_command_kind(value.kind) || !valid_display_page(value.page)) {
+  if (!valid_command_kind(value.kind) || !enum_at_most(value.page, DisplayPage::Backtrack)) {
     return Error::InvalidEnum;
   }
   return value.command_id == 0 ? Error::OutOfRange : Error::None;
+}
+
+bool valid_backtrack_identity(const BacktrackIdentity& identity) {
+  return std::any_of(identity.begin(), identity.end(), [](auto byte) { return byte != 0; });
+}
+Error validate(const BacktrackState& value) {
+  if (!valid_backtrack_identity(value.identity) || value.generation == 0 ||
+      (value.flags & ~0xFFU) != 0 || !valid_geo_point(value.position)) return Error::OutOfRange;
+  if (!enum_at_most(value.display_page, DisplayPage::Backtrack)) return Error::InvalidEnum;
+  if ((value.target_bearing_cdeg != kUnknownBacktrackDirection && value.target_bearing_cdeg >= 36000) ||
+      (value.direction_cdeg != kUnknownBacktrackDirection && value.direction_cdeg >= 36000)) return Error::OutOfRange;
+  if ((value.flags & BacktrackActive) == 0 && value.display_page == DisplayPage::Backtrack) return Error::InvalidEnum;
+  return Error::None;
+}
+Error validate(const BacktrackGeometry& value) {
+  if (!valid_backtrack_identity(value.identity) || value.generation == 0) return Error::OutOfRange;
+  if (value.points.empty() || value.points.size() > kMaxRoutePointsPerChunk ||
+      value.total_point_count == 0 || value.total_point_count > kMaxBacktrackPoints) return Error::TooManyItems;
+  if (value.chunk_count != (value.total_point_count + 23) / 24 ||
+      value.chunk_index >= value.chunk_count || value.first_point_index != value.chunk_index * 24 ||
+      value.points.size() != std::min<std::size_t>(24, value.total_point_count - value.first_point_index)) return Error::OutOfRange;
+  for (std::size_t i = 0; i < value.points.size(); ++i) {
+    if (!valid_geo_point(value.points[i].coordinate)) return Error::OutOfRange;
+    if (i && (value.points[i].progress_m < value.points[i-1].progress_m ||
+              value.points[i].segment_index < value.points[i-1].segment_index)) return Error::OutOfRange;
+  }
+  return Error::None;
 }
 
 template <typename T>
@@ -606,6 +633,32 @@ BytesResult encode_payload(const T& value) {
     for (const MapBuildingFootprint& building : value.buildings) {
       writer.u8(static_cast<std::uint8_t>(building.building_class));
       write_points(building.points);
+    }
+  } else if constexpr (std::is_same_v<T, BacktrackState>) {
+    for (auto byte : value.identity) writer.u8(byte);
+    writer.u32(value.generation);
+    writer.u16(value.flags);
+    writer.u8(static_cast<std::uint8_t>(value.display_page));
+    writer.u32(value.remaining_distance_m);
+    writer.u32(value.target_distance_m);
+    writer.u32(value.progress_m);
+    writer.u16(value.target_bearing_cdeg);
+    writer.u16(value.direction_cdeg);
+    writer.s32(value.position.latitude_e6);
+    writer.s32(value.position.longitude_e6);
+  } else if constexpr (std::is_same_v<T, BacktrackGeometry>) {
+    for (auto byte : value.identity) writer.u8(byte);
+    writer.u32(value.generation);
+    writer.u16(value.chunk_index);
+    writer.u16(value.chunk_count);
+    writer.u16(value.first_point_index);
+    writer.u16(value.total_point_count);
+    writer.u16(static_cast<std::uint16_t>(value.points.size()));
+    for (const auto& point : value.points) {
+      writer.s32(point.coordinate.latitude_e6);
+      writer.s32(point.coordinate.longitude_e6);
+      writer.u32(point.progress_m);
+      writer.u16(point.segment_index);
     }
   } else if constexpr (std::is_same_v<T, DeviceCommand>) {
     writer.u8(static_cast<std::uint8_t>(value.kind));
@@ -885,6 +938,48 @@ MessageResult decode_map_scene(ByteView payload) {
       }
       reader.require_end();
     }
+  }
+  return decoded_result(std::move(value), reader);
+}
+
+MessageResult decode_backtrack_state(ByteView payload) {
+  Reader reader(payload);
+  BacktrackState value;
+  if (begin_payload(reader)) {
+    for (auto& byte : value.identity) byte = reader.u8();
+    value.generation = reader.u32();
+    value.flags = reader.u16();
+    value.display_page = static_cast<DisplayPage>(reader.u8());
+    value.remaining_distance_m = reader.u32();
+    value.target_distance_m = reader.u32();
+    value.progress_m = reader.u32();
+    value.target_bearing_cdeg = reader.u16();
+    value.direction_cdeg = reader.u16();
+    value.position = {reader.s32(), reader.s32()};
+    reader.require_end();
+  }
+  return decoded_result(std::move(value), reader);
+}
+MessageResult decode_backtrack_geometry(ByteView payload) {
+  Reader reader(payload);
+  BacktrackGeometry value;
+  if (begin_payload(reader)) {
+    for (auto& byte : value.identity) byte = reader.u8();
+    value.generation = reader.u32();
+    value.chunk_index = reader.u16();
+    value.chunk_count = reader.u16();
+    value.first_point_index = reader.u16();
+    value.total_point_count = reader.u16();
+    const auto count = reader.u16();
+    if (count > kMaxRoutePointsPerChunk) reader.fail(Error::TooManyItems);
+    for (std::size_t i = 0; reader.ok() && i < count; ++i) {
+      BacktrackPoint point;
+      point.coordinate = {reader.s32(), reader.s32()};
+      point.progress_m = reader.u32();
+      point.segment_index = reader.u16();
+      value.points.push_back(point);
+    }
+    reader.require_end();
   }
   return decoded_result(std::move(value), reader);
 }
@@ -1454,6 +1549,21 @@ bool DeviceCommand::operator==(const DeviceCommand& rhs) const noexcept {
                   rhs.event_time_ms);
 }
 
+bool BacktrackState::operator==(const BacktrackState& r) const noexcept {
+  return std::tie(identity, generation, flags, display_page, remaining_distance_m,
+                  target_distance_m, progress_m, target_bearing_cdeg, direction_cdeg, position) ==
+         std::tie(r.identity, r.generation, r.flags, r.display_page, r.remaining_distance_m,
+                  r.target_distance_m, r.progress_m, r.target_bearing_cdeg, r.direction_cdeg, r.position);
+}
+bool BacktrackPoint::operator==(const BacktrackPoint& r) const noexcept {
+  return coordinate == r.coordinate && progress_m == r.progress_m && segment_index == r.segment_index;
+}
+bool BacktrackGeometry::operator==(const BacktrackGeometry& r) const noexcept {
+  return identity == r.identity && generation == r.generation &&
+         chunk_index == r.chunk_index && chunk_count == r.chunk_count &&
+         first_point_index == r.first_point_index && total_point_count == r.total_point_count && points == r.points;
+}
+
 MessageType message_type(const Message& message) noexcept {
   return std::visit(
       [](const auto& value) {
@@ -1474,8 +1584,12 @@ MessageType message_type(const Message& message) noexcept {
           return MessageType::MediaState;
         } else if constexpr (std::is_same_v<T, MapScene>) {
           return MessageType::MapScene;
-        } else {
+        } else if constexpr (std::is_same_v<T, DeviceCommand>) {
           return MessageType::DeviceCommand;
+        } else if constexpr (std::is_same_v<T, BacktrackState>) {
+          return MessageType::BacktrackState;
+        } else if constexpr (std::is_same_v<T, BacktrackGeometry>) {
+          return MessageType::BacktrackGeometry;
         }
       },
       message);
@@ -1500,6 +1614,8 @@ MessageResult decode_message(MessageType type, ByteView payload) {
       return decode_traffic_deviation(payload);
     case MessageType::MediaState: return decode_media_state(payload);
     case MessageType::MapScene: return decode_map_scene(payload);
+    case MessageType::BacktrackState: return decode_backtrack_state(payload);
+    case MessageType::BacktrackGeometry: return decode_backtrack_geometry(payload);
     case MessageType::DeviceCommand:
       return decode_device_command(payload);
   }

@@ -76,7 +76,7 @@ struct BacktrackView: View {
                     BacktrackRouteMap(route: session.route, progress: progress).id(session.route.id)
                     Text("沿启动时已骑过的轨迹返回。返程继续记录在本次 Ride 中。")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Text("圆屏暂不显示原路返回指导，请查看 iPhone。")
+                    Text(model.device.supportsBacktrack ? "已连接支持原路返回的圆屏。" : "圆屏指导需要连接支持 Backtrack 的设备。")
                         .font(.footnote).foregroundStyle(.secondary)
                     RideMetricsView(model: model, compact: true)
                     HStack(spacing: 24) {

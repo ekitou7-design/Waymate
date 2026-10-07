@@ -246,7 +246,8 @@ moto::ble::ConnectionStatus PhoneConnectionStatus(
                         moto::ble::CapabilityTouchCommands |
                         moto::ble::CapabilityMusicCommands |
                         moto::ble::CapabilityCommandAck |
-                        moto::ble::CapabilityMapScene;
+                        moto::ble::CapabilityMapScene |
+                        moto::ble::CapabilityBacktrack;
   status.session_id = session_id;
   status.max_frame_size =
       static_cast<std::uint16_t>(storage->maximum_frame_size);
@@ -289,6 +290,13 @@ moto::ble::ConnectionStatus PhoneConnectionStatus(
 @end
 
 @implementation MotoBLEMapPointInput
+@end
+
+@implementation MotoBLEBacktrackStateInput
+@end
+@implementation MotoBLEBacktrackPointInput
+@end
+@implementation MotoBLEBacktrackGeometryInput
 @end
 
 @implementation MotoBLEMapRoadInput
@@ -494,6 +502,42 @@ moto::ble::ConnectionStatus PhoneConnectionStatus(
         {CoordinateE6(point.latitudeDeg), CoordinateE6(point.longitudeDeg)});
   }
   return EncodeMessage(storage, moto::ble::Message{geometry}, 0, error);
+}
+
+- (NSArray<NSData *> *)encodeBacktrackState:(MotoBLEBacktrackStateInput *)input error:(NSError **)error {
+  if (input.identity.length != 16) {
+    if (error) *error = ProtocolError(moto::ble::Error::InvalidArgument);
+    return nil;
+  }
+  moto::ble::BacktrackState value;
+  std::copy_n(static_cast<const uint8_t *>(input.identity.bytes), 16, value.identity.begin());
+  value.generation = input.generation;
+  value.flags = input.flags;
+  value.display_page = static_cast<moto::ble::DisplayPage>(input.page);
+  value.remaining_distance_m = input.remainingDistanceM;
+  value.target_distance_m = input.targetDistanceM;
+  value.progress_m = input.progressM;
+  value.target_bearing_cdeg = input.targetBearingCentiDegrees;
+  value.direction_cdeg = input.directionCentiDegrees;
+  value.position = {input.latitudeE6, input.longitudeE6};
+  return EncodeMessage(static_cast<CodecStorage *>(_storage), moto::ble::Message{value}, 0, error);
+}
+- (NSArray<NSData *> *)encodeBacktrackGeometry:(MotoBLEBacktrackGeometryInput *)input error:(NSError **)error {
+  if (input.identity.length != 16) {
+    if (error) *error = ProtocolError(moto::ble::Error::InvalidArgument);
+    return nil;
+  }
+  moto::ble::BacktrackGeometry value;
+  std::copy_n(static_cast<const uint8_t *>(input.identity.bytes), 16, value.identity.begin());
+  value.generation = input.generation;
+  value.chunk_index = input.chunkIndex;
+  value.chunk_count = (input.totalPointCount + 23) / 24;
+  value.first_point_index = input.chunkIndex * 24;
+  value.total_point_count = input.totalPointCount;
+  for (MotoBLEBacktrackPointInput *point in input.points) {
+    value.points.push_back({{point.latitudeE6, point.longitudeE6}, point.progressM, point.segmentIndex});
+  }
+  return EncodeMessage(static_cast<CodecStorage *>(_storage), moto::ble::Message{value}, moto::ble::AckRequested, error);
 }
 
 - (NSArray<NSData *> *)encodeMediaState:(MotoBLEMediaStateInput *)input

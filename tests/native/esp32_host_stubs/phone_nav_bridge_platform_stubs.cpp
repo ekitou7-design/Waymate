@@ -339,3 +339,5 @@ uint32_t phone_nav_bridge_last_distance_to_maneuver_m() {
 }
 
 }  // namespace moto::test
+
+extern "C" void moto_nav_ui_set_backtrack_state(const moto_ui_backtrack_state_t*) {}

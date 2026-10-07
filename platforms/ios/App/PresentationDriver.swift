@@ -2,7 +2,7 @@ import Foundation
 
 /// Existing BLE v1 pages. Ready is the Navigation renderer's idle mode.
 enum RoundDisplayPage: UInt8, CaseIterable {
-    case navigation = 0, speed = 1, compass = 2, music = 3
+    case navigation = 0, speed = 1, compass = 2, music = 3, backtrack = 4
 
     var protocolName: String {
         switch self {
@@ -10,14 +10,15 @@ enum RoundDisplayPage: UInt8, CaseIterable {
         case .speed: return "speed"
         case .compass: return "compass"
         case .music: return "music"
+        case .backtrack: return "backtrack"
         }
     }
 
     init(primary: PresentationDecision.PrimaryComponent) {
         switch primary {
         case .idle, .navigation: self = .navigation
-        // BLE v1 has no Backtrack page. Speed is explicitly a fallback, not guidance.
-        case .ride, .backtrack: self = .speed
+        case .ride: self = .speed
+        case .backtrack: self = .backtrack
         case .media: self = .music
         }
     }
@@ -62,7 +63,8 @@ final class PresentationDriver {
 
     @discardableResult
     func manuallySelect(rawValue: UInt8) -> Bool {
-        guard let page = RoundDisplayPage(rawValue: rawValue) else { return false }
+        guard let page = RoundDisplayPage(rawValue: rawValue),
+              page != .backtrack || facts.backtrack != nil else { return false }
         selectedPage = page
         manualSelection = true
         // A deliberate browse dismisses the automatic window. Keep its identity
@@ -108,10 +110,11 @@ final class PresentationDriver {
             && next.reason != previous?.reason
         let backtrackEvent = next.reason == .backtrackOffTrack
             && next.urgentEventIdentity != previous?.urgentEventIdentity
+        let backtrackArrival = next.reason == .backtrackArrived && previous?.reason != .backtrackArrived
         guard force || previous == nil
             || next.primaryComponent != previous?.primaryComponent
             || next.eventIdentity != previous?.eventIdentity
-            || urgentEvent || backtrackEvent else { return false }
+            || urgentEvent || backtrackEvent || backtrackArrival else { return false }
         selectedPage = RoundDisplayPage(primary: next.primaryComponent)
         manualSelection = false
         trace("\(String(describing: previous?.primaryComponent)) -> \(next.primaryComponent) reason=\(next.reason) event=\(next.eventIdentity ?? "--") resync=\(force)")
