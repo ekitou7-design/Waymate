@@ -81,22 +81,6 @@ final class SharedNavigationRuntime {
         publish(bridge.cancelNavigation())
     }
 
-    /// Commits an ESP32 page selection through the same shared NavCore that
-    /// produces subsequent BLE snapshots, so the phone cannot switch it back.
-    @discardableResult
-    func selectDisplayPage(rawValue: UInt8) -> Bool {
-        let name: String
-        switch rawValue {
-        case 0: name = "navigation"
-        case 1: name = "speed"
-        case 2: name = "compass"
-        case 3: name = "music"
-        default: return false
-        }
-        publish(bridge.selectDisplayPageName(name))
-        return bridge.snapshot.displayPageName == name
-    }
-
     private func accept(_ fix: NavigationFix) {
         let commands = bridge.pushFixLongitude(
             fix.coordinate.longitudeDeg,

@@ -125,14 +125,17 @@ enum BLEOutboundBatch {
 }
 
 /// Pending is consumed by the write pump; latest survives transport teardown.
-/// Geometry and page stay in the same immutable NavCore snapshot.
+/// Geometry stays in the immutable NavCore snapshot; page is a transport copy
+/// of the phone's PresentationDriver selection, retained across teardown.
 struct BLENavigationStateCache {
     private(set) var latest: MotoNavCoreSnapshot?
     private(set) var pending: MotoNavCoreSnapshot?
+    private(set) var displayPageName = "navigation"
 
-    mutating func update(_ state: MotoNavCoreSnapshot) {
+    mutating func update(_ state: MotoNavCoreSnapshot, displayPageName: String? = nil) {
         latest = state
         pending = state
+        self.displayPageName = displayPageName ?? state.displayPageName
     }
 
     mutating func takePending() -> MotoNavCoreSnapshot? {
@@ -205,6 +208,7 @@ final class ESP32BLECentral: NSObject {
 
     var onSnapshotChange: ((BLEDeviceSnapshot) -> Void)?
     var onDeviceCommand: ((MotoBLEDeviceCommand) -> BLECommandDisposition)?
+    var onDisplayResynchronization: (() -> Void)?
     private(set) var snapshot = BLEDeviceSnapshot() {
         didSet { onSnapshotChange?(snapshot) }
     }
@@ -329,8 +333,8 @@ final class ESP32BLECentral: NSObject {
         snapshot = BLEDeviceSnapshot(connection: .idle)
     }
 
-    func sendNavigationSnapshot(_ state: MotoNavCoreSnapshot) {
-        navigationState.update(state)
+    func sendNavigationSnapshot(_ state: MotoNavCoreSnapshot, displayPage: RoundDisplayPage? = nil) {
+        navigationState.update(state, displayPageName: displayPage?.protocolName)
         scheduleNavigationTransmit()
     }
 
@@ -585,6 +589,9 @@ final class ESP32BLECentral: NSObject {
                 codec.setMaximumFrameSize(UInt(maximumFrameSize))
                 handshakeTask?.cancel()
                 handshakeTask = nil
+                // Reevaluate Home/expiry while sends are still gated. The
+                // callback updates the baseline; resync below transmits it once.
+                onDisplayResynchronization?()
                 protocolReady = true
                 peerCapabilities = value.capabilities
                 // A physical connection is not healthy until service discovery,
@@ -1123,14 +1130,14 @@ final class ESP32BLECentral: NSObject {
         return value
     }
 
-    private func makeSnapshotInput(
+    func makeSnapshotInput(
         _ state: MotoNavCoreSnapshot,
         codec: MotoBLEProtocolCodec
     ) -> MotoBLENavigationSnapshotInput {
         let input = MotoBLENavigationSnapshotInput()
         input.stateName = state.stateName
         input.networkName = state.networkName
-        input.displayPageName = state.displayPageName
+        input.displayPageName = navigationState.displayPageName
         input.hasDestination = state.hasDestination
         input.hasFix = state.hasUsableFix
         input.gnssStale = state.gnssStale

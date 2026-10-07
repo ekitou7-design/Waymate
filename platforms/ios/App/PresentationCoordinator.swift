@@ -1,4 +1,4 @@
-/// Stage 2 shadow model only. No production page or transport consumes this value.
+/// Pure presentation policy, consumed by the production PresentationDriver.
 struct PresentationDecision: Equatable, Sendable {
     enum PrimaryComponent: Equatable, Sendable {
         case idle, ride, navigation, media

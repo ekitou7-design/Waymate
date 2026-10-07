@@ -21,10 +21,7 @@ final class AppModel: ObservableObject {
     private var pendingAutomaticRide = false
 
     var presentationDecision: PresentationDecision {
-        PresentationCoordinator.evaluate(
-            input: .init(navigation: navigationComponentState, rideActive: rideActive, mediaInteraction: nil),
-            now: ContinuousClock().now
-        )
+        presentationDriver.currentDecision
     }
     var rideTrack: [RideTrackPoint] { rideSession.track }
     var rideDistance: Double { rideSession.distance }
@@ -37,17 +34,20 @@ final class AppModel: ObservableObject {
         guard !rideSession.isActive else { return }
         guard subscribeRideLocation() else { return }
         rideSession.start(at: rideNow())
+        updatePresentation()
     }
 
     func pauseRide() {
         guard rideSession.state == .active else { return }
         rideSession.pause(at: rideNow())
         liveLocation.stopRide()
+        updatePresentation()
     }
 
     func resumeRide() {
         guard rideSession.state == .paused, subscribeRideLocation() else { return }
         rideSession.resume(at: rideNow())
+        updatePresentation()
     }
 
     func stopRide() {
@@ -55,6 +55,7 @@ final class AppModel: ObservableObject {
         pendingAutomaticRide = false
         lastRideRecord = rideSession.stop(at: rideNow())
         liveLocation.stopRide()
+        updatePresentation()
     }
 
     private func subscribeRideLocation() -> Bool {
@@ -85,6 +86,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var routePreviewFailure: String?
 
     private let bluetooth = ESP32BLECentral()
+    let presentationDriver: PresentationDriver
     private let liveLocation: SharedLocationSource
     private let rideNow: () -> Date
     private let searchLocation = SearchLocationBiasSource()
@@ -93,9 +95,15 @@ final class AppModel: ObservableObject {
     private let mediaController = AppleMusicRemoteController()
     @Published private(set) var mediaState: PhoneMediaState?
 
-    // Reuse the existing controller; no playback or presentation policy here.
-    func performMediaCommand(_ kind: UInt8) {
-        _ = mediaController.handleDeviceCommand(kind: kind)
+    // Playback updates are facts; only an accepted user control opens a window.
+    @discardableResult
+    func performMediaCommand(_ kind: UInt8) -> BLECommandDisposition {
+        let status = mediaController.handleDeviceCommand(kind: kind)
+        if status == .accepted {
+            // The BLE transport already rejects duplicate command IDs per session.
+            presentationDriver.mediaInteracted(eventIdentity: UUID().uuidString)
+        }
+        return status
     }
     let surroundingMap: SurroundingMapStore
     @Published private(set) var mapGatewayBaseURL: URL
@@ -111,7 +119,10 @@ final class AppModel: ObservableObject {
 
     init(gatewayBaseURL: URL = AppConfiguration.gatewayBaseURL, startsServices: Bool = true,
          locationSource: (any NavigationLocationSource)? = nil,
-         rideNow: @escaping () -> Date = Date.init) {
+         rideNow: @escaping () -> Date = Date.init,
+         presentationDriver: PresentationDriver? = nil) {
+        let presentationDriver = presentationDriver ?? PresentationDriver()
+        self.presentationDriver = presentationDriver
         liveLocation = SharedLocationSource(source: locationSource ?? CoreLocationNavigationSource())
         self.rideNow = rideNow
         liveRouteProvider = AmapGatewayRouteProvider(baseURL: gatewayBaseURL)
@@ -131,12 +142,11 @@ final class AppModel: ObservableObject {
             guard let self else { return .failed }
             switch command.kind {
             case 0:
-                guard let runtime = self.runtime else { return .invalidState }
-                return runtime.selectDisplayPage(rawValue: command.page)
+                return self.presentationDriver.manuallySelect(rawValue: command.page)
                     ? .accepted
                     : .unsupported
             case 16 ... 19:
-                return self.mediaController.handleDeviceCommand(kind: command.kind)
+                return self.performMediaCommand(command.kind)
             default:
                 return .unsupported
             }
@@ -145,6 +155,14 @@ final class AppModel: ObservableObject {
             self?.mediaState = state
             self?.bluetooth.sendMediaState(state)
         }
+        presentationDriver.onSelection = { [weak self] page in
+            guard let self else { return }
+            self.bluetooth.sendNavigationSnapshot(self.navigation, displayPage: page)
+        }
+        bluetooth.onDisplayResynchronization = { [weak self] in
+            self?.presentationDriver.resynchronize()
+        }
+        updatePresentation()
         searchLocation.onLocationChange = { [weak self] point in
             guard let self else { return }
             let query = self.destinationQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -531,14 +549,17 @@ final class AppModel: ObservableObject {
 
     private func bind(_ runtime: SharedNavigationRuntime) {
         runtime.onSnapshot = { [weak self] snapshot in
-            self?.navigation = snapshot
+            guard let self else { return }
+            self.navigation = snapshot
             if snapshot.stateName == "navigating" || snapshot.stateName == "arrived" {
-                self?.navigationFailure = nil
-                self?.pendingAutomaticRide = false
+                self.navigationFailure = nil
+                self.pendingAutomaticRide = false
             }
-            self?.bluetooth.sendNavigationSnapshot(snapshot)
+            if !self.updatePresentation() {
+                self.bluetooth.sendNavigationSnapshot(snapshot, displayPage: self.presentationDriver.selectedPage)
+            }
             if snapshot.hasRouteView {
-                self?.surroundingMap.update(
+                self.surroundingMap.update(
                     latitudeDeg: snapshot.routeViewOriginLatitudeDeg,
                     longitudeDeg: snapshot.routeViewOriginLongitudeDeg
                 )
@@ -563,6 +584,12 @@ final class AppModel: ObservableObject {
         liveLocation.stopRide()
         // A failed automatic start is discarded, never published as a completed Ride.
         rideSession = RideSession()
+        updatePresentation()
+    }
+
+    @discardableResult
+    private func updatePresentation() -> Bool {
+        presentationDriver.update(navigation: navigationComponentState, rideActive: rideActive)
     }
 
     private func beginRoutePreviewRequestIfPossible() {
