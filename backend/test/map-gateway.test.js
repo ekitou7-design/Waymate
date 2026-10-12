@@ -20,7 +20,11 @@ test("gateway validates map coordinates/query and exposes disabled capabilities 
   const health = await (await fetch(base + "/healthz")).json();
   assert.equal(health.capabilities.surrounding_map, false);
   assert.equal(health.capabilities.map_city_search, false);
-  assert.deepEqual(health.map_source, { enabled: false });
+  assert.deepEqual(health.map_source, {
+    enabled: false,
+    mode: "disabled",
+    reason: "surrounding map is disabled",
+  });
 });
 
 test("map, city and route rate budgets are independent and retries carry a delay", async (t) => {
