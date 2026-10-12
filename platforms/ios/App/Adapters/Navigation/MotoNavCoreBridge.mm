@@ -5,6 +5,8 @@
 #include <utility>
 
 #include "nav_app/nav_app.hpp"
+#include "nav_presenter/include/moto_route_direction.h"
+#include "nav_presenter/include/moto_mini_map.h"
 
 namespace {
 
@@ -109,6 +111,8 @@ NSString *CommandName(moto::nav::CommandType type) {
 @end
 
 @interface MotoNavCoreSnapshot ()
+@property(nonatomic, readwrite, copy) NSString *routeDirection;
+@property(nonatomic, readwrite, copy) NSArray<MotoNavMapPointValue *> *miniMapPoints;
 @property(nonatomic, readwrite, copy) NSString *stateName;
 @property(nonatomic, readwrite, copy) NSString *networkName;
 @property(nonatomic, readwrite, copy) NSString *displayPageName;
@@ -164,9 +168,10 @@ NSArray<MotoNavCoreCommand *> *CommandsFrom(const moto::nav::NavCommands &comman
   return values;
 }
 
-MotoNavCoreSnapshot *SnapshotFrom(const moto::nav::NavSnapshot &source) {
+MotoNavCoreSnapshot *SnapshotFrom(const moto::nav::NavSnapshot &source, moto::nav::MiniMapCamera &camera) {
   MotoNavCoreSnapshot *value = [[MotoNavCoreSnapshot alloc] init];
   value.stateName = StateName(source.state);
+  value.routeDirection = [NSString stringWithUTF8String:moto::nav::planned_route_direction(source)];
   value.networkName = NetworkName(source.network);
   value.displayPageName = DisplayPageName(source.display_page);
   value.hasDestination = source.has_destination;
@@ -192,6 +197,13 @@ MotoNavCoreSnapshot *SnapshotFrom(const moto::nav::NavSnapshot &source) {
     [points addObject:point];
   }
   value.routeViewPoints = points;
+  const auto transform = camera.update(source);
+  NSMutableArray<MotoNavMapPointValue *> *mini = [NSMutableArray arrayWithCapacity:24];
+  if(moto::nav::mini_map_has_geometry(source)) for(std::size_t i=0; i<source.route_view_point_count; ++i) {
+    const auto p=moto::nav::mini_map_project(source.route_view_points[i], transform);
+    MotoNavMapPointValue *v=[[MotoNavMapPointValue alloc] init]; v.x=p.x; v.y=p.y; [mini addObject:v];
+  }
+  value.miniMapPoints = mini;
   value.routeID = [NSString stringWithUTF8String:source.route_id.c_str()];
   value.routeProgressM = source.route_progress_m;
   value.totalDistanceM = source.total_distance_m;
@@ -214,11 +226,14 @@ MotoNavCoreSnapshot *SnapshotFrom(const moto::nav::NavSnapshot &source) {
 struct BridgeStorage {
   BridgeStorage() : app(moto::nav::NavCoreConfig{}) {}
   moto::nav::NavApp app;
+  moto::nav::MiniMapCamera map_camera;
 };
 
 }  // namespace
 
 @implementation MotoNavPointValue
+@end
+@implementation MotoNavMapPointValue
 @end
 
 @implementation MotoNavManeuverValue
@@ -258,6 +273,11 @@ struct BridgeStorage {
 @end
 
 @implementation MotoNavCoreSnapshot
+- (instancetype)init {
+  self = [super init];
+  if (self) { _routeDirection = @"沿路线前进"; _miniMapPoints = @[]; }
+  return self;
+}
 @end
 
 @implementation MotoNavCoreBridge {
@@ -269,7 +289,7 @@ struct BridgeStorage {
   self = [super init];
   if (self) {
     _storage = new BridgeStorage{};
-    _snapshot = SnapshotFrom(static_cast<BridgeStorage *>(_storage)->app.snapshot());
+    _snapshot = SnapshotFrom(static_cast<BridgeStorage *>(_storage)->app.snapshot(), static_cast<BridgeStorage *>(_storage)->map_camera);
   }
   return self;
 }
@@ -283,7 +303,7 @@ struct BridgeStorage {
 - (NSArray<MotoNavCoreCommand *> *)handle:(moto::nav::NavEvent)event {
   auto *storage = static_cast<BridgeStorage *>(_storage);
   const auto commands = storage->app.handle(std::move(event));
-  _snapshot = SnapshotFrom(storage->app.snapshot());
+  _snapshot = SnapshotFrom(storage->app.snapshot(), storage->map_camera);
   return CommandsFrom(commands);
 }
 

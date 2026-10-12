@@ -72,14 +72,15 @@ struct ActiveNavigationView: View {
                 }
             } else if readout.canShowManeuver, state.nextManeuver != nil {
                 Image(systemName: readout.maneuver.symbol)
-                    .font(.system(size: glyphSize, weight: .medium))
+                    .font(.system(size: glyphSize * 0.7, weight: .semibold))
                     .foregroundStyle(WaymateTheme.accent).accessibilityHidden(true)
-                Text(readout.maneuver.label).font(.title2.weight(.semibold))
-                    .accessibilityIdentifier("navigation-maneuver")
                 Text(state.distanceToManeuverM.map { $0 >= 1_000 ? String(format: "%.1f km", $0 / 1_000) : String(format: "%.0f m", $0) } ?? "--")
                     .font(.largeTitle.weight(.semibold)).monospacedDigit()
                     .accessibilityIdentifier("navigation-maneuver-distance")
-                if let instruction = state.instruction { Text(instruction).font(.title3) }
+                Text(state.routeDirection).font(.title3.weight(.medium))
+                    .accessibilityIdentifier("navigation-route-direction")
+                Text(state.instruction ?? readout.maneuver.label)
+                    .font(.title3).accessibilityIdentifier("navigation-maneuver")
                 if let road = state.maneuverRoadName { Text(road).foregroundStyle(.secondary) }
             } else {
                 Text(failure == nil ? warningDetail : "导航暂不可用。请检查网络、定位与网关配置。")

@@ -31,6 +31,7 @@ std::string phone_nav_bridge_media_source();
 std::string phone_nav_bridge_media_title();
 std::string phone_nav_bridge_media_artist();
 bool phone_nav_bridge_last_demo_active();
+bool phone_nav_bridge_last_simulated_input();
 moto_maneuver_t phone_nav_bridge_last_maneuver();
 uint32_t phone_nav_bridge_last_distance_to_maneuver_m();
 
