@@ -4,6 +4,7 @@
 // transitions and label/geometry residue cleanup.
 
 #include "moto_nav_ui.h"
+#include "moto_nav_presenter.hpp"
 
 #include <lvgl.h>
 
@@ -484,7 +485,7 @@ void test_stage_c_product_states() {
   CHECK(has_visible_label(lv_screen_active(), "LOCATION STALE"));
   state.gnss_stale = 0; state.mode = MOTO_UI_ARRIVED;
   moto_nav_ui_set_state(&state); export_preview("arrived");
-  CHECK(has_visible_label(lv_screen_active(), "ARRIVED"));
+  CHECK(has_visible_label(lv_screen_active(), "到达目的地"));
   CHECK(!has_visible_label(lv_screen_active(), "0"));
   CHECK(!has_visible_label(lv_screen_active(), "RIDE COMPLETE"));
   state.mode = MOTO_UI_NAVIGATING; state.page = MOTO_UI_PAGE_SPEED;
@@ -829,6 +830,172 @@ void test_diagonal_map_pixels_are_independent_of_partial_buffer_height() {
   CHECK(draw_with_buffer(short_buffer) == tall_frame);
 }
 
+
+// SIMULATED states rendered by actual LVGL and final label font chains.
+void test_competition_action_labels_and_glyphs() {
+  // Reuse the live test UI; adding another create would orphan its timers.
+  moto_nav_ui_set_reduce_motion(1);
+  moto_nav_ui_set_phone_connection(MOTO_UI_PHONE_ONLINE);
+  pump(220); // Settle the existing connection-success overlay before capture.
+  auto state=base_state(); fill_route(state,5);
+  // A road outside the finite subset is omitted, never rendered as tofu.
+  state.next_road_name="青年大街";
+  state.route_direction="东北";
+  struct Case { moto_maneuver_t type; const char* text; const char* preview; };
+  const Case cases[]={
+    {MOTO_MANEUVER_LEFT,"前方左转","rc-left-200m"},
+    {MOTO_MANEUVER_RIGHT,"前方右转","rc-right-80m"},
+    {MOTO_MANEUVER_STRAIGHT,"继续直行","rc-straight"},
+    {MOTO_MANEUVER_UTURN,"前方掉头","rc-uturn"},
+    {MOTO_MANEUVER_SLIGHT_LEFT,"靠左行驶","rc-keep-left"},
+    {MOTO_MANEUVER_SLIGHT_RIGHT,"靠右行驶","rc-keep-right"},
+    {MOTO_MANEUVER_SLIGHT_LEFT,"向左前方","rc-slight-left"},
+    {MOTO_MANEUVER_SLIGHT_RIGHT,"向右前方","rc-slight-right"}};
+  std::vector<std::uint64_t> arrow_hashes;
+  for (const auto& item : cases) {
+    state.maneuver=item.type; state.maneuver_instruction=item.text;
+    state.distance_to_maneuver_m=item.type==MOTO_MANEUVER_LEFT?200:80;
+    const int turn_y = 254 - static_cast<int>(state.distance_to_maneuver_m * 0.57);
+    const int turn_x = item.type==MOTO_MANEUVER_LEFT || item.type==MOTO_MANEUVER_SLIGHT_LEFT ? 130 : 370;
+    state.route_point_count=3;
+    state.route_points[0]={233,280}; state.route_points[1]={233,static_cast<int16_t>(turn_y)};
+    state.route_points[2]={static_cast<int16_t>(turn_x),static_cast<int16_t>(turn_y)};
+    if(item.type==MOTO_MANEUVER_STRAIGHT) state.route_points[2]={233,60};
+    if(item.type==MOTO_MANEUVER_UTURN) {
+      state.route_point_count=4; state.route_points[2]={300,static_cast<int16_t>(turn_y)};
+      state.route_points[3]={300,290};
+    }
+    moto_nav_ui_set_state(&state);
+    CHECK(has_visible_label(lv_screen_active(),item.text));
+    CHECK(has_visible_label(lv_screen_active(),"东北"));
+    auto* main_label=find_visible_label(lv_screen_active(),"东北");
+    auto* auxiliary=find_visible_label(lv_screen_active(),item.text);
+    if(main_label && auxiliary) CHECK(lv_obj_get_style_text_font(main_label,LV_PART_MAIN)->line_height <= 32);
+    CHECK(!has_visible_label(lv_screen_active(),"青年大街"));
+    CHECK(has_visible_label(lv_screen_active(),item.type==MOTO_MANEUVER_LEFT?"200":"80"));
+    check_visible_utf8(lv_screen_active());
+    lv_obj_invalidate(lv_screen_active());
+    export_preview(item.preview);
+    const auto frame=capture();
+    unsigned distance_pixels = 0;
+    for(int y=307;y<373;++y) for(int x=145;x<310;++x) {
+      const auto offset=(y*kWidth+x)*2;
+      distance_pixels += (frame.bytes[offset] | (frame.bytes[offset+1]<<8)) != 0;
+    }
+    unsigned map_pixels = 0;
+    for(int y=86;y<286;++y) for(int x=84;x<382;++x) {
+      const auto offset=(y*kWidth+x)*2;
+      map_pixels += (frame.bytes[offset] | (frame.bytes[offset+1]<<8)) != 0;
+    }
+    CHECK(map_pixels > 200); // Route junction and rider remain painted beside the main arrow.
+    CHECK(distance_pixels > 100); // Text must be painted, not just retained in a zero-width label.
+    std::uint64_t hash=1469598103934665603ULL;
+    unsigned lit=0;
+    for(int y=320;y<365;++y) for(int x=82;x<128;++x) {
+      const auto i=(y*kWidth+x)*2;
+      const unsigned pixel=frame.bytes[i]|(frame.bytes[i+1]<<8);
+      lit+=pixel!=0; hash=(hash^pixel)*1099511628211ULL;
+    }
+    CHECK(lit>20); arrow_hashes.push_back(hash);
+  }
+  // Left/right/straight/U-turn must render distinct vector shapes.
+  for(unsigned i=0;i<4;++i) for(unsigned j=i+1;j<4;++j)
+    CHECK(arrow_hashes[i]!=arrow_hashes[j]);
+  auto* instruction=find_visible_label(lv_screen_active(),"向右前方");
+  CHECK(instruction!=nullptr);
+  // Check requested scalars against the actual 28px instruction label chain.
+  if(instruction) {
+    const uint32_t scalars[]={0x4E1C,0x5357,0x897F,0x5317,0x5DE6,0x53F3,
+      0x76F4,0x884C,0x8F6C,0x5F2F,0x6389,0x5934,0x9760};
+    check_font_glyphs(lv_obj_get_style_text_font(instruction,LV_PART_MAIN),scalars,13);
+  }
+  for(const char* direction : {"北", "东北", "东", "东南",
+                              "南", "西南", "西", "西北"}) {
+    state.route_direction=direction;
+    moto_nav_ui_set_state(&state);
+    CHECK(has_visible_label(lv_screen_active(),direction));
+    check_visible_utf8(lv_screen_active());
+  }
+  state.online=0; moto_nav_ui_set_state(&state);
+  auto* offline=find_visible_label(lv_screen_active(),"NETWORK OFFLINE");
+  CHECK(offline!=nullptr);
+  if(offline) {
+    const uint32_t scalars[]={0x4E1C,0x5357,0x897F,0x5317,0x5DE6,0x53F3,
+      0x76F4,0x884C,0x8F6C,0x5F2F,0x6389,0x5934,0x9760};
+    check_font_glyphs(lv_obj_get_style_text_font(offline,LV_PART_MAIN),scalars,13);
+  }
+  state.online=1;
+  state.route_direction="沿路线前进";
+  state.has_next_maneuver=0; state.maneuver_instruction="沿路线前进";
+  moto_nav_ui_set_state(&state);
+  CHECK(has_visible_label(lv_screen_active(),"沿路线前进"));
+  CHECK(has_visible_label(lv_screen_active(),"--"));
+  CHECK(!has_visible_label(lv_screen_active(),"80"));
+  check_visible_utf8(lv_screen_active()); lv_obj_invalidate(lv_screen_active()); export_preview("rc-unknown-start");
+  state.has_next_maneuver=1;state.maneuver=MOTO_MANEUVER_RIGHT;state.maneuver_instruction="前方右转";
+  state.distance_to_maneuver_m=25;moto_nav_ui_set_state(&state);
+  CHECK(has_visible_label(lv_screen_active(),"25")); export_preview("rc-distance-25m");
+  state.mode=MOTO_UI_ARRIVED;moto_nav_ui_set_state(&state);
+  CHECK(has_visible_label(lv_screen_active(),"到达目的地"));
+  CHECK(!has_visible_label(lv_screen_active(),"25"));
+  check_visible_utf8(lv_screen_active()); lv_obj_invalidate(lv_screen_active()); export_preview("rc-arrived");
+}
+
+void test_route_first_geometry_previews() {
+  using namespace moto::nav;
+  NavPresenter presenter;
+  NavSnapshot s;
+  s.state=NavState::Navigating; s.network=NetworkState::Online;
+  s.has_destination=true; s.has_usable_fix=true; s.gnss_stale=false;
+  s.horizontal_accuracy_m=2; s.has_route_view=true; s.has_next_maneuver=true;
+  s.route_id="simulated-mini-map"; s.route_view_origin={30,120};
+  s.distance_to_next_maneuver_m=120;
+  const auto geo=[](double east,double north) {
+    return Gcj02Point{30+north/111194.926645,120+east/(111194.926645*std::cos(30*3.141592653589793/180))};
+  };
+  struct Case { const char* name; ManeuverType type; std::vector<std::pair<double,double>> xy; };
+  const Case cases[]={
+    {"A-straight",ManeuverType::Continue,{{0,-50},{0,0},{0,120},{0,400}}},
+    {"B-left",ManeuverType::Left,{{0,-50},{0,0},{0,120},{-180,120},{-180,240}}},
+    {"C-right",ManeuverType::Right,{{0,-50},{0,0},{0,120},{180,120},{180,240}}},
+    {"D-continuous-bends",ManeuverType::Right,{{0,-50},{0,0},{0,120},{80,120},{80,240},{-80,240},{-80,330}}},
+    {"E-S-curve",ManeuverType::SlightRight,{{0,-50},{0,0},{0,60},{15,95},{40,120},{70,135},{100,140},{135,155},{160,180},{175,215},{175,260}}},
+    {"F-uturn",ManeuverType::UTurnRight,{{0,-50},{0,0},{0,100},{10,120},{30,130},{50,120},{60,100},{60,0}}}
+  };
+  moto_nav_ui_set_reduce_motion(1); moto_nav_ui_set_simulated_input(1);
+  for(const auto& item:cases) {
+    s.next_maneuver.type=item.type;
+    s.route_view_point_count=static_cast<std::uint8_t>(item.xy.size());
+    for(std::size_t i=0;i<item.xy.size();++i) s.route_view_points[i]=geo(item.xy[i].first,item.xy[i].second);
+    presenter.update(s); presenter.apply_to_lvgl();
+    check_visible_utf8(lv_screen_active());
+    CHECK(has_visible_label(lv_screen_active(),"120"));
+    CHECK(has_visible_label(lv_screen_active(),"DEMO"));
+    export_preview(item.name);
+    const auto frame=capture();
+    unsigned outside_circle=0, route_pixels=0;
+    for(int y=0;y<kHeight;++y) for(int x=0;x<kWidth;++x) {
+      const auto offset=(y*kWidth+x)*2;
+      const auto pixel=frame.bytes[offset] | (frame.bytes[offset+1]<<8);
+      if((x-233)*(x-233)+(y-233)*(y-233)>232*232) outside_circle+=pixel!=0;
+      if(x>=74&&x<=392&&y>=66&&y<=300) route_pixels+=pixel!=0;
+    }
+    CHECK(outside_circle==0); CHECK(route_pixels>600);
+  }
+  s.has_route_view=false; s.route_view_point_count=0;
+  presenter.update(s); presenter.apply_to_lvgl();
+  CHECK(has_visible_label(lv_screen_active(),"ROUTE UNAVAILABLE"));
+  CHECK(has_visible_label(lv_screen_active(),"120")); export_preview("no-geometry-fallback");
+  s.has_route_view=true; s.route_view_point_count=3;
+  s.route_view_points[0]=geo(0,0); s.route_view_points[1]=geo(0,120); s.route_view_points[2]=geo(180,120);
+  s.off_route=true; presenter.update(s); presenter.apply_to_lvgl();
+  CHECK(has_visible_label(lv_screen_active(),"OFF ROUTE")); CHECK(!has_visible_label(lv_screen_active(),"120"));
+  export_preview("route-first-off-route");
+  s.off_route=false; s.gnss_stale=true; presenter.update(s); presenter.apply_to_lvgl();
+  CHECK(has_visible_label(lv_screen_active(),"LOCATION STALE")); export_preview("route-first-stale");
+  moto_nav_ui_set_simulated_input(0);
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -848,6 +1015,13 @@ int main(int argc, char **argv) {
       [](std::uint8_t byte) { return byte == 0x00; });
   CHECK(all_black);
 
+  if(std::getenv("MOTO_UI_COMPETITION_ONLY")) {
+    moto_nav_ui_create();
+    test_competition_action_labels_and_glyphs();
+    test_route_first_geometry_previews();
+    std::cout << "SIMULATED competition LVGL/glyph checks: " << failures << " failures\n";
+    return failures ? EXIT_FAILURE : EXIT_SUCCESS;
+  }
   test_frames_are_deterministic();
   test_clearing_geometry_leaves_no_residue();
   test_music_page_state_and_fallback();
@@ -858,6 +1032,7 @@ int main(int argc, char **argv) {
   test_diagonal_map_pixels_are_independent_of_partial_buffer_height();
 
   test_stage_c_product_states();
+
   test_backtrack_product_states();
 
   // Terminal screens run last: they tear the full UI down.

@@ -314,6 +314,23 @@ void test_crc_and_sequence_primitives() {
         route_token("web-beijing-fixture"));
 }
 
+
+// SIMULATED v1 payloads; all existing maneuver codes/text survive unchanged.
+void test_competition_maneuver_wire_compatibility() {
+  for(unsigned code=0;code<=12;++code) {
+    auto nav=navigation_fixture();
+    nav.maneuver=static_cast<Maneuver>(code);
+    nav.distance_to_maneuver_m=code%2?80:200;
+    nav.instruction=code%2?"靠左行驶":"前方右转";
+    const Message message{nav};
+    const auto encoded=encode_message(message);
+    CHECK(encoded.ok());
+    const auto decoded=decode_message(MessageType::NavigationSnapshot,ByteView(encoded.value));
+    CHECK(decoded.ok());
+    if(decoded.ok())CHECK(decoded.value==message);
+  }
+}
+
 void test_all_message_round_trips() {
   const std::vector<Message> messages = {
       Message{connection_fixture()},
@@ -650,6 +667,7 @@ int main(int argc, char** argv) {
   test_crc_and_sequence_primitives();
   test_backtrack_additive_protocol();
   test_all_message_round_trips();
+  test_competition_maneuver_wire_compatibility();
   test_golden_vectors();
   test_fragmentation_and_reassembly();
   test_full_map_scene_budget_and_reassembly();

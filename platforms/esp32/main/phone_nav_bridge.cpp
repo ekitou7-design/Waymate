@@ -664,6 +664,7 @@ void PhoneNavBridge::consume_navigation(
       demo_started_ms_ = 0;
     }
     auto& phone_snapshot = phone_snapshot_locked();
+    phone_simulated_input_ = input.road_name == "WAYMATE DEMO";
     // Receiving a valid navigation snapshot proves that the two-phase
     // protocol session is usable even if a reordered Ready frame was not
     // observed by this bridge callback.
@@ -1023,6 +1024,7 @@ void PhoneNavBridge::render_pending() {
     if (navigation) {
       render_phone_connection_ = ui_phone_connection_;
       render_demo_active_ = demo_active_;
+      render_simulated_input_ = phone_simulated_input_;
       render_music_page_enabled_ = music_page_enabled_;
     }
     if (media) {
@@ -1053,6 +1055,7 @@ void PhoneNavBridge::render_pending() {
   if (navigation) {
     moto_nav_ui_set_phone_connection(render_phone_connection_);
     moto_nav_ui_set_demo_active(render_demo_active_ ? 1U : 0U);
+    moto_nav_ui_set_simulated_input(render_simulated_input_ ? 1U : 0U);
     moto_nav_ui_set_music_page_enabled(
         render_music_page_enabled_ ? 1U : 0U);
     moto_nav_ui_set_backtrack_state(&presenter_.backtrack_ui_state());

@@ -161,3 +161,39 @@ struct RouteOverviewMap: UIViewRepresentable {
         }
     }
 }
+
+/// Full phone map stays independent of the compact round-display layout.
+/// Apple supplies the basemap; all overlays are the accepted route/GPS only.
+struct ActiveNavigationMap: View {
+    let points: [GCJ02Point]
+    let snapshot: MotoNavCoreSnapshot
+    @State private var position: MapCameraPosition = .automatic
+    private var coordinates: [CLLocationCoordinate2D] {
+        points.map { p in
+            let wgs = ChinaCoordinateTransform.gcj02ToWGS84(p)
+            return .init(latitude: wgs.latitudeDeg, longitude: wgs.longitudeDeg)
+        }
+    }
+    var body: some View {
+        let route = coordinates
+        ZStack(alignment: .topTrailing) {
+            Map(position: $position) {
+                if route.count >= 2 {
+                    MapPolyline(coordinates: route).stroke(WaymateTheme.accent, lineWidth: 6)
+                }
+                if snapshot.hasUsableFix && !snapshot.gnssStale && snapshot.hasRouteView {
+                    let p = ChinaCoordinateTransform.gcj02ToWGS84(.init(longitudeDeg: snapshot.routeViewOriginLongitudeDeg, latitudeDeg: snapshot.routeViewOriginLatitudeDeg))
+                    Annotation("当前位置", coordinate: .init(latitude: p.latitudeDeg, longitude: p.longitudeDeg)) {
+                        Image(systemName: "location.fill").foregroundStyle(.white).padding(8)
+                            .background(WaymateTheme.accent, in: Circle())
+                    }
+                }
+                if let last = route.last { Marker("目的地", systemImage: "flag.fill", coordinate: last) }
+            }.mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll, showsTraffic: true))
+                .accessibilityIdentifier("navigation-full-map")
+            Button("路线总览") { position = .automatic }
+                .font(.caption.weight(.semibold)).padding(10).background(.regularMaterial, in: Capsule()).padding(10)
+                .accessibilityIdentifier("navigation-route-overview")
+        }
+    }
+}

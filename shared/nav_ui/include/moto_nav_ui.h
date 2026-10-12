@@ -112,6 +112,8 @@ typedef struct {
     moto_ui_page_t page;
     moto_ui_mode_t mode;
     moto_maneuver_t maneuver;
+    const char *maneuver_instruction; /* Presentation only; not BLE wire data. */
+    const char *route_direction; /* Planned geometry only; never BLE wire data. */
     moto_traffic_t traffic;
     uint32_t distance_to_maneuver_m;
     uint32_t remaining_distance_m;
@@ -193,6 +195,8 @@ void moto_nav_ui_set_music_command_callback(
     void *context);
 /** Mark the production navigation renderer as being fed by demo snapshots. */
 void moto_nav_ui_set_demo_active(uint8_t enabled);
+// Presentation marker for simulated phone input; does not enable local Demo.
+void moto_nav_ui_set_simulated_input(uint8_t enabled);
 /** Long-pressing the navigation page toggles this test-build demo source. */
 void moto_nav_ui_set_demo_change_callback(
     moto_demo_change_callback_t callback,

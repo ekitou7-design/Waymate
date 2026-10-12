@@ -29,6 +29,7 @@ uint8_t last_building_point_count = 0;
 uint8_t last_building_footprint_count = 0;
 uint8_t last_building_class = 0;
 uint8_t last_demo_active = 0;
+bool last_simulated_input = false;
 moto_maneuver_t last_maneuver = MOTO_MANEUVER_STRAIGHT;
 uint32_t last_distance_to_maneuver_m = 0;
 moto_ui_phone_connection_t last_phone_connection = MOTO_UI_PHONE_OFFLINE;
@@ -341,3 +342,14 @@ uint32_t phone_nav_bridge_last_distance_to_maneuver_m() {
 }  // namespace moto::test
 
 extern "C" void moto_nav_ui_set_backtrack_state(const moto_ui_backtrack_state_t*) {}
+
+extern "C" void moto_nav_ui_set_simulated_input(uint8_t enabled) {
+  const std::lock_guard<std::mutex> lock(probe_mutex);
+  last_simulated_input = enabled != 0;
+}
+namespace moto::test {
+bool phone_nav_bridge_last_simulated_input() {
+  const std::lock_guard<std::mutex> lock(probe_mutex);
+  return last_simulated_input;
+}
+}

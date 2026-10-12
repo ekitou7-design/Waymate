@@ -100,20 +100,20 @@ function stepGeometry(step, stepDistanceM) {
 export function mapAmapManeuver(action, assistantAction = "") {
   const primary = compactText(action, 96);
   const assistant = compactText(assistantAction, 96);
-  const combined = `${primary} ${assistant}`;
+  const combined = primary && primary !== "无基本导航动作" ? primary : assistant;
 
-  if (/到达|目的地/.test(assistant) || /到达目的地/.test(primary)) return "arrive";
+  if (/到达(?:目的地|终点)/.test(`${primary} ${assistant}`)) return "arrive";
   if (/驶出环岛|离开环岛|出环岛/.test(combined)) return "exit";
   if (/环岛/.test(combined)) return "roundabout";
-  if (/右后方|右转掉头|向右掉头/.test(combined)) return "u_turn_right";
-  if (/左后方|掉头/.test(combined)) return "u_turn_left";
+  if (/右后方|右转[掉调]头|向右[掉调]头/.test(combined)) return "u_turn_right";
+  if (/左后方|[掉调]头/.test(combined)) return "u_turn_left";
   if (/右前方|稍向右|靠右/.test(combined)) return "slight_right";
   if (/左前方|稍向左|靠左/.test(combined)) return "slight_left";
   if (/急向右|大幅右转/.test(combined)) return "sharp_right";
   if (/急向左|大幅左转/.test(combined)) return "sharp_left";
   if (/右转/.test(combined)) return "right";
   if (/左转/.test(combined)) return "left";
-  if (/直行|沿|前行|继续/.test(combined)) return "continue";
+  if (/直行|前行|继续/.test(combined)) return "continue";
   return "unknown";
 }
 
@@ -207,8 +207,16 @@ export function transformAmapRouteV2(payload, { generatedAtMs = Date.now(), path
     appendPolyline(polyline, stepPolyline);
 
     const navi = step.navi && typeof step.navi === "object" ? step.navi : {};
-    const action = navi.action ?? step.action ?? "";
-    const assistantAction = navi.assistant_action ?? step.assistant_action ?? "";
+    const action = compactText(navi.action, 96) || compactText(step.action, 96);
+    const assistantAction = compactText(navi.assistant_action, 96) ||
+                            compactText(step.assistant_action, 96);
+    const type = mapAmapManeuver(action, assistantAction);
+    // Keep-left/right share v1's slight-left/right type. Carry their explicit
+    // wording in the existing instruction field, without changing the wire.
+    const keepSide = type === "slight_left" && /靠左/.test(`${action} ${assistantAction}`)
+                      ? "靠左行驶"
+                      : type === "slight_right" && /靠右/.test(`${action} ${assistantAction}`)
+                          ? "靠右行驶" : "";
 
     // AMap describes a step as "travel this step, then perform action".
     // The maneuver therefore happens at the end of the step, not at its
@@ -217,10 +225,10 @@ export function transformAmapRouteV2(payload, { generatedAtMs = Date.now(), path
     // early on the device.
     maneuvers.push({
       id: index + 1,
-      type: mapAmapManeuver(action, assistantAction),
+      type,
       route_offset_m: rounded(routeOffsetM + stepDistanceM),
       road_name: compactText(step.road_name ?? step.road, 96),
-      instruction: compactText(step.instruction, 256),
+      instruction: keepSide || compactText(step.instruction, 256),
       roundabout_exit: roundaboutExit(action, assistantAction),
     });
 

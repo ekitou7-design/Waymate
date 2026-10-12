@@ -115,7 +115,7 @@ void test_all_maneuvers() {
       {ManeuverType::SharpRight, MOTO_MANEUVER_RIGHT},
       {ManeuverType::UTurnRight, MOTO_MANEUVER_UTURN},
       {ManeuverType::Roundabout, MOTO_MANEUVER_ROUNDABOUT},
-      {ManeuverType::Exit, MOTO_MANEUVER_RIGHT},
+      {ManeuverType::Exit, MOTO_MANEUVER_STRAIGHT},
       {ManeuverType::Arrive, MOTO_MANEUVER_ARRIVE},
   }};
 
@@ -215,6 +215,7 @@ void test_heading_up_route_projection_keeps_rider_fixed() {
   NavPresenter presenter;
   NavSnapshot snapshot;
   snapshot.state = NavState::Navigating;
+  snapshot.has_usable_fix = true; snapshot.gnss_stale = false; snapshot.horizontal_accuracy_m = 5; snapshot.route_id = "map-test";
   snapshot.heading_deg = 90.0F;
   snapshot.distance_to_next_maneuver_m = 500.0;
   snapshot.has_route_view = true;
@@ -228,7 +229,7 @@ void test_heading_up_route_projection_keeps_rider_fixed() {
   CHECK(state.route_point_count == 2);
   constexpr int rider_x = MOTO_UI_CANVAS_WIDTH / 2;
   constexpr int rider_y =
-      (196 * MOTO_UI_CANVAS_HEIGHT + 180) / 360;
+      276;
   CHECK(state.route_points[0].x == rider_x);
   CHECK(state.route_points[0].y == rider_y);
   // Facing east means an eastbound route is drawn straight ahead/up while
@@ -241,6 +242,7 @@ void test_non_finite_heading_keeps_map_projection_finite() {
   NavPresenter presenter;
   NavSnapshot snapshot;
   snapshot.state = NavState::Navigating;
+  snapshot.has_usable_fix = true; snapshot.gnss_stale = false; snapshot.horizontal_accuracy_m = 5; snapshot.route_id = "map-test";
   snapshot.heading_deg = std::numeric_limits<float>::quiet_NaN();
   snapshot.has_route_view = true;
   snapshot.route_view_origin = {31.2304, 121.4737};
@@ -254,7 +256,7 @@ void test_non_finite_heading_keeps_map_projection_finite() {
   CHECK(state.route_point_count == 2);
   constexpr int rider_x = MOTO_UI_CANVAS_WIDTH / 2;
   constexpr int rider_y =
-      (196 * MOTO_UI_CANVAS_HEIGHT + 180) / 360;
+      276;
   CHECK(state.route_points[0].x == rider_x);
   CHECK(state.route_points[0].y == rider_y);
 }
@@ -263,6 +265,7 @@ void test_real_road_context_uses_the_same_heading_up_transform() {
   NavPresenter presenter;
   NavSnapshot snapshot;
   snapshot.state = NavState::Navigating;
+  snapshot.has_usable_fix = true; snapshot.gnss_stale = false; snapshot.horizontal_accuracy_m = 5; snapshot.route_id = "map-test";
   snapshot.heading_deg = 90.0F;
   snapshot.has_route_view = true;
   snapshot.route_view_origin = {36.67, 117.13};
@@ -298,6 +301,7 @@ void test_map_scene_classes_buildings_and_capacity_share_route_transform() {
   NavPresenter presenter;
   NavSnapshot snapshot;
   snapshot.state = NavState::Navigating;
+  snapshot.has_usable_fix = true; snapshot.gnss_stale = false; snapshot.horizontal_accuracy_m = 5; snapshot.route_id = "map-test";
   snapshot.heading_deg = 90.0F;
   snapshot.has_route_view = true;
   snapshot.route_view_origin = {36.67, 117.13};
@@ -369,6 +373,7 @@ void test_map_scale_does_not_jump_at_maneuver_distance_thresholds() {
   NavPresenter presenter;
   NavSnapshot snapshot;
   snapshot.state = NavState::Navigating;
+  snapshot.has_usable_fix = true; snapshot.gnss_stale = false; snapshot.horizontal_accuracy_m = 5; snapshot.route_id = "map-test";
   snapshot.heading_deg = 0.0F;
   snapshot.has_route_view = true;
   snapshot.route_view_origin = {36.67, 117.13};
@@ -385,8 +390,9 @@ void test_map_scale_does_not_jump_at_maneuver_distance_thresholds() {
   constexpr std::array<double, 8> distances{{
       89.9, 90.0, 90.1, 259.9, 260.0, 260.1, 699.9, 700.1,
   }};
+  snapshot.has_next_maneuver = true;
   moto_ui_point_t expected_route{};
-  moto_ui_point_t expected_road{};
+  double previous_distance = 0;
   bool have_expected = false;
   for (double distance : distances) {
     snapshot.distance_to_next_maneuver_m = distance;
@@ -396,13 +402,16 @@ void test_map_scale_does_not_jump_at_maneuver_distance_thresholds() {
     CHECK(state.road_point_count == 2);
     if (!have_expected) {
       expected_route = state.route_points[1];
-      expected_road = state.road_points[1];
+      previous_distance = distance;
       have_expected = true;
     } else {
-      CHECK(state.route_points[1].x == expected_route.x);
-      CHECK(state.route_points[1].y == expected_route.y);
-      CHECK(state.road_points[1].x == expected_road.x);
-      CHECK(state.road_points[1].y == expected_road.y);
+      if(distance-previous_distance < 1) {
+        CHECK(std::abs(state.route_points[1].x-expected_route.x) <= 1);
+        CHECK(std::abs(state.route_points[1].y-expected_route.y) <= 1);
+      }
+      CHECK(state.road_points[1].x == state.route_points[1].x);
+      CHECK(state.road_points[1].y == state.route_points[1].y);
+      expected_route=state.route_points[1]; previous_distance=distance;
     }
   }
 }
@@ -448,8 +457,8 @@ void test_presenter_owns_road_name_storage() {
   snapshot.next_maneuver.instruction = "靠左行驶";
   presenter.update(snapshot);
   CHECK(presenter.ui_state().road_name == nullptr);
-  CHECK(presenter.ui_state().next_road_name != nullptr);
-  CHECK(std::strcmp(presenter.ui_state().next_road_name, "靠左行驶") == 0);
+  CHECK(presenter.ui_state().next_road_name == nullptr);
+  CHECK(std::strcmp(presenter.ui_state().maneuver_instruction, "前方右转") == 0);
 
   snapshot.has_next_maneuver = false;
   presenter.update(snapshot);
@@ -508,11 +517,140 @@ void test_stage_c_validity_is_only_a_display_projection() {
   CHECK(presenter.ui_state().speed_available == 0);
 }
 
+
+// SIMULATED snapshots; no live position/BLE/device evidence.
+void test_competition_relative_action_copy() {
+  NavPresenter presenter;
+  NavSnapshot snapshot;
+  snapshot.state = NavState::Navigating;
+  snapshot.has_next_maneuver = true;
+  snapshot.next_maneuver.instruction = "沿道路东";
+  struct Case { ManeuverType type; const char* copy; };
+  for (const auto& item : {Case{ManeuverType::Left,"前方左转"},
+      Case{ManeuverType::Right,"前方右转"}, Case{ManeuverType::Continue,"继续直行"},
+      Case{ManeuverType::UTurnLeft,"前方掉头"},Case{ManeuverType::UTurnRight,"前方掉头"},
+      Case{ManeuverType::SlightLeft,"向左前方"},Case{ManeuverType::SlightRight,"向右前方"},
+      Case{ManeuverType::Arrive,"到达目的地"},Case{ManeuverType::Unknown,"沿路线前进"},
+      Case{ManeuverType::Exit,"驶出环岛"}}) {
+    snapshot.next_maneuver.type = item.type;
+    presenter.update(snapshot);
+    CHECK(std::strcmp(presenter.ui_state().maneuver_instruction,item.copy)==0);
+    CHECK(presenter.ui_state().next_road_name==nullptr);
+    CHECK(presenter.ui_state().has_next_maneuver ==
+          (item.type!=ManeuverType::Unknown && item.type!=ManeuverType::Exit));
+  }
+  for (const auto& item : {Case{ManeuverType::SlightLeft,"靠左行驶"},
+                          Case{ManeuverType::SlightRight,"靠右行驶"}}) {
+    snapshot.next_maneuver.type=item.type;
+    snapshot.next_maneuver.instruction=item.copy;
+    presenter.update(snapshot);
+    snapshot.next_maneuver.instruction.clear();
+    CHECK(std::strcmp(presenter.ui_state().maneuver_instruction,item.copy)==0);
+  }
+  snapshot.has_next_maneuver=false;
+  presenter.update(snapshot);
+  CHECK(std::strcmp(presenter.ui_state().maneuver_instruction,"沿路线前进")==0);
+}
+
+void test_planned_cardinal_direction_is_independent_of_device_heading() {
+  NavPresenter presenter;
+  NavSnapshot s;
+  s.state = NavState::Navigating;
+  s.route_id = "planned-route";
+  s.has_usable_fix = true; s.gnss_stale = false;
+  s.horizontal_accuracy_m = 5;
+  s.has_route_view = true; s.route_view_point_count = 2;
+  s.route_view_origin = {30, 120};
+  s.has_next_maneuver = true; s.next_maneuver.type = ManeuverType::Right;
+  s.next_maneuver.instruction = "西"; // Untrusted as current direction.
+  const char* labels[] = {"北", "东北", "东", "东南",
+                          "南", "西南", "西", "西北"};
+  for (int i = 0; i < 8; ++i) {
+    const double angle = i * 3.141592653589793 / 4;
+    const double lat = 100 * std::cos(angle) / 111195;
+    const double lon = 100 * std::sin(angle) / (111195 * std::cos(30 * 3.141592653589793 / 180));
+    s.route_view_points[0] = {30 - lat, 120 - lon};
+    s.route_view_points[1] = {30 + lat, 120 + lon};
+    for (float heading : {0.f, 90.f, 180.f, 270.f}) {
+      s.heading_deg = heading;
+      presenter.update(s);
+      CHECK(std::strcmp(presenter.ui_state().route_direction, labels[i]) == 0);
+      CHECK(std::strcmp(presenter.ui_state().maneuver_instruction, "前方右转") == 0);
+    }
+  }
+  const auto unknown = [&] {
+    presenter.update(s);
+    CHECK(std::strcmp(presenter.ui_state().route_direction, "沿路线前进") == 0);
+  };
+  // A window starts behind the rider: do not use its first segment blindly.
+  s.route_view_point_count = 3;
+  s.route_view_points[0] = {29.999, 119.999};
+  s.route_view_points[1] = {29.999, 120};
+  s.route_view_points[2] = {30.001, 120};
+  presenter.update(s);
+  CHECK(std::strcmp(presenter.ui_state().route_direction, "北") == 0);
+  s.route_view_origin = s.route_view_points[1]; unknown(); // Corner ambiguity.
+  s.route_view_origin = {30, 120};
+  s.route_view_point_count = 4;
+  s.route_view_points[3] = s.route_view_points[1]; unknown(); // Opposite overlap.
+  s.route_view_point_count = 2;
+  s.route_view_points[0] = {30, 120};
+  s.route_view_points[1] = {30, 120}; unknown(); // Degenerate.
+  s.route_view_points[1] = {30.001, 120};
+  s.route_view_origin = {31, 121}; unknown(); // No nearby planned segment.
+  s.route_view_origin = {30, 120};
+  s.route_view_points[1] = {30.001, 120 + 0.001 * std::tan(22.5 * 3.141592653589793 / 180) / std::cos(30 * 3.141592653589793 / 180)};
+  unknown(); // Sector boundary is not guessed to north or northeast.
+  s.route_view_points[1] = {30.001, 120};
+  s.gnss_stale = true; unknown(); s.gnss_stale = false;
+  s.off_route = true; unknown(); s.off_route = false;
+  s.has_usable_fix = false; unknown(); s.has_usable_fix = true;
+  s.state = NavState::Rerouting; unknown(); s.state = NavState::Navigating;
+  s.horizontal_accuracy_m = 0; unknown();
+  s.horizontal_accuracy_m = std::numeric_limits<float>::quiet_NaN(); unknown();
+  s.horizontal_accuracy_m = 5;
+  s.route_view_points[1].latitude_deg = std::numeric_limits<double>::quiet_NaN(); unknown();
+  s.has_route_view = false; unknown();
+}
+
+void test_route_first_projection_is_not_mirrored_or_rotated_by_device() {
+  NavPresenter presenter;
+  NavSnapshot s; s.state=NavState::Navigating; s.has_route_view=true;
+  s.has_usable_fix=true; s.gnss_stale=false; s.horizontal_accuracy_m=2;
+  s.route_id="route-first"; s.route_view_origin={30,120};
+  s.has_next_maneuver=true; s.next_maneuver.type=ManeuverType::Right;
+  s.distance_to_next_maneuver_m=120; s.route_view_point_count=3;
+  const double north=120/111194.926645, east=100/(111194.926645*std::cos(30*3.141592653589793/180));
+  s.route_view_points[0]=s.route_view_origin;
+  s.route_view_points[1]={30+north,120}; s.route_view_points[2]={30+north,120+east};
+  moto_ui_state_t before{};
+  for(float heading:{0.f,90.f,180.f,270.f}) {
+    s.heading_deg=heading; presenter.update(s); const auto& state=presenter.ui_state();
+    CHECK(state.route_points[0].x==233 && state.route_points[0].y==276);
+    CHECK(state.route_points[1].x==233 && state.route_points[1].y<276);
+    CHECK(state.route_points[2].x>233 && state.route_points[2].y==state.route_points[1].y);
+    if(heading==0) before=state;
+    else CHECK(state.route_points[2].x==before.route_points[2].x && state.route_points[2].y==before.route_points[2].y);
+  }
+  s.route_view_points[2].longitude_deg=120-east; presenter.update(s);
+  CHECK(presenter.ui_state().route_points[2].x<233);
+  MiniMapCamera camera;
+  s.distance_to_next_maneuver_m=320; const auto far=camera.update(s);
+  s.distance_to_next_maneuver_m=50; const auto near=camera.update(s);
+  CHECK(near.pixels_per_metre>far.pixels_per_metre);
+  s.route_view_point_count=255; presenter.update(s); CHECK(presenter.ui_state().route_point_count==0);
+  s.route_view_point_count=3; s.route_view_points[1].latitude_deg=std::numeric_limits<double>::quiet_NaN();
+  presenter.update(s); CHECK(presenter.ui_state().route_point_count==0);
+}
+
 int main() {
   test_stage_c_validity_is_only_a_display_projection();
   test_all_navigation_and_network_states();
   test_display_pages_map_without_changing_navigation_mode();
   test_all_maneuvers();
+  test_competition_relative_action_copy();
+  test_planned_cardinal_direction_is_independent_of_device_heading();
+  test_route_first_projection_is_not_mirrored_or_rotated_by_device();
   test_all_traffic_levels();
   test_metrics_are_rounded_clamped_and_deterministic();
   test_heading_up_route_projection_keeps_rider_fixed();

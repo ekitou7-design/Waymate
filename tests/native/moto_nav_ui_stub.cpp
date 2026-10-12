@@ -70,3 +70,5 @@ const moto_ui_state_t& last_applied_nav_ui_state() {
 }  // namespace moto::test
 
 extern "C" void moto_nav_ui_set_backtrack_state(const moto_ui_backtrack_state_t*) {}
+
+extern "C" void moto_nav_ui_set_simulated_input(uint8_t) {}

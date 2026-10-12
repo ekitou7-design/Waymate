@@ -8,6 +8,7 @@
 #include <type_traits>
 
 #include "lvgl.h"
+#include "src/misc/lv_text_private.h"
 
 LV_FONT_DECLARE(waymate_a_16_84851);
 LV_FONT_DECLARE(waymate_a_20_91119);
@@ -150,6 +151,7 @@ struct Ui {
     std::uint32_t nav_route_generation = 0;
     lv_timer_t *nav_route_motion_timer = nullptr;
     lv_obj_t *nav_marker = nullptr;
+    lv_obj_t *nav_map_note = nullptr;
     lv_obj_t *nav_status = nullptr;
     lv_obj_t *nav_road = nullptr;
     lv_obj_t *connection_status[MOTO_UI_PAGE_COUNT]{};
@@ -178,6 +180,7 @@ struct Ui {
     std::uint16_t lifecycle_phase_deg = 0;
     bool lifecycle_success_active = false;
     bool navigation_has_guidance = false;
+    bool compact_navigation_map = false;
     bool navigation_route_request_in_flight = false;
 
     lv_obj_t *speed_arc = nullptr;
@@ -216,6 +219,7 @@ struct Ui {
     moto_ui_backtrack_state_t backtrack{};
     bool music_page_enabled = true;
     bool demo_active = false;
+    bool simulated_input = false;
     bool reduce_motion = false;
 } ui;
 
@@ -416,25 +420,36 @@ void draw_vehicle_marker(lv_event_t *event) {
     lv_obj_get_coords(object, &area);
     lv_layer_t *layer = lv_event_get_layer(event);
 
+    const double marker_scale = static_cast<double>(lv_obj_get_width(object)) / px(35);
+    const auto marker_px = [marker_scale](int value) { return static_cast<int>(px(value) * marker_scale); };
     lv_draw_triangle_dsc_t triangle;
     lv_draw_triangle_dsc_init(&triangle);
     triangle.color = kBlack;
     triangle.opa = LV_OPA_COVER;
-    triangle.p[0] = {static_cast<lv_value_precise_t>(area.x1 + px(17)),
+    triangle.p[0] = {static_cast<lv_value_precise_t>(area.x1 + marker_px(17)),
                      static_cast<lv_value_precise_t>(area.y1)};
     triangle.p[1] = {static_cast<lv_value_precise_t>(area.x1),
-                     static_cast<lv_value_precise_t>(area.y1 + px(36))};
-    triangle.p[2] = {static_cast<lv_value_precise_t>(area.x1 + px(34)),
-                     static_cast<lv_value_precise_t>(area.y1 + px(36))};
+                     static_cast<lv_value_precise_t>(area.y1 + marker_px(36))};
+    triangle.p[2] = {static_cast<lv_value_precise_t>(area.x1 + marker_px(34)),
+                     static_cast<lv_value_precise_t>(area.y1 + marker_px(36))};
     lv_draw_triangle(layer, &triangle);
 
     triangle.color = kWhite;
-    triangle.p[0] = {static_cast<lv_value_precise_t>(area.x1 + px(17)),
-                     static_cast<lv_value_precise_t>(area.y1 + px(5))};
-    triangle.p[1] = {static_cast<lv_value_precise_t>(area.x1 + px(6)),
-                     static_cast<lv_value_precise_t>(area.y1 + px(30))};
-    triangle.p[2] = {static_cast<lv_value_precise_t>(area.x1 + px(28)),
-                     static_cast<lv_value_precise_t>(area.y1 + px(30))};
+    triangle.p[0] = {static_cast<lv_value_precise_t>(area.x1 + marker_px(17)),
+                     static_cast<lv_value_precise_t>(area.y1 + marker_px(5))};
+    triangle.p[1] = {static_cast<lv_value_precise_t>(area.x1 + marker_px(6)),
+                     static_cast<lv_value_precise_t>(area.y1 + marker_px(30))};
+    triangle.p[2] = {static_cast<lv_value_precise_t>(area.x1 + marker_px(28)),
+                     static_cast<lv_value_precise_t>(area.y1 + marker_px(30))};
+    lv_draw_triangle(layer, &triangle);
+    // A notched position arrow stays distinct from the thick route beneath it.
+    triangle.color = kBlack;
+    triangle.p[0] = {static_cast<lv_value_precise_t>(area.x1 + marker_px(17)),
+                     static_cast<lv_value_precise_t>(area.y1 + marker_px(24))};
+    triangle.p[1] = {static_cast<lv_value_precise_t>(area.x1 + marker_px(6)),
+                     static_cast<lv_value_precise_t>(area.y1 + marker_px(31))};
+    triangle.p[2] = {static_cast<lv_value_precise_t>(area.x1 + marker_px(28)),
+                     static_cast<lv_value_precise_t>(area.y1 + marker_px(31))};
     lv_draw_triangle(layer, &triangle);
 }
 
@@ -602,6 +617,19 @@ void draw_map_polyline(lv_event_t *event) {
     lv_draw_line_dsc_init(&line);
     line.base.layer = layer;
     lv_obj_init_draw_line_dsc(object, LV_PART_MAIN, &line);
+    const lv_area_t original_clip = layer->_clip_area;
+    if(ui.compact_navigation_map) {
+        // Reuse existing route/context points. A small junction window needs
+        // no new canvas, offscreen image, geometry buffer or invented streets.
+        layer->_clip_area = {std::max(original_clip.x1, int32_t(74)),
+                             std::max(original_clip.y1, int32_t(66)),
+                             std::min(original_clip.x2, int32_t(392)),
+                             std::min(original_clip.y2, int32_t(300))};
+        if(layer->_clip_area.x1 > layer->_clip_area.x2 ||
+           layer->_clip_area.y1 > layer->_clip_area.y2) {
+            layer->_clip_area = original_clip; return;
+        }
+    }
     for(std::uint16_t index = 1; index < polyline->count; ++index) {
         line.p1 = polyline->points[index - 1];
         line.p2 = polyline->points[index];
@@ -612,6 +640,7 @@ void draw_map_polyline(lv_event_t *event) {
         draw_map_line(layer, line);
         line.round_start = 0;
     }
+    layer->_clip_area = original_clip;
 }
 
 lv_obj_t *create_map_polyline(lv_obj_t *parent, MapPolyline &polyline) {
@@ -971,8 +1000,8 @@ lv_point_precise_t arrow_base(const lv_point_precise_t& previous,
     };
 }
 
-constexpr int icon_px(int value) { return px(value * 3 / 5); }
-constexpr double icon_px(double value) { return px(value * 0.6); }
+int icon_px(int value) { return value * lv_obj_get_width(ui.nav_maneuver) / 116; }
+double icon_px(double value) { return value * lv_obj_get_width(ui.nav_maneuver) / 116.0; }
 
 void draw_arrowhead(lv_layer_t *layer, const lv_area_t& area,
                     const lv_point_precise_t& previous,
@@ -1351,11 +1380,11 @@ LifecycleVisual desired_lifecycle_visual() {
 
 void refresh_lifecycle() {
     transition_lifecycle(desired_lifecycle_visual());
-    for(int i = 1; i < MOTO_UI_PAGE_COUNT; ++i) {
+    for(int i = 0; i < MOTO_UI_PAGE_COUNT; ++i) {
         if(!ui.connection_status[i]) continue;
         const char *text = ui.phone_connection == MOTO_UI_PHONE_OFFLINE ? "PHONE LOST" :
                            ui.phone_connection == MOTO_UI_PHONE_CONNECTING ? "LINK NOT READY" : "";
-        lv_label_set_text(ui.connection_status[i], ui.demo_active ? "DEMO" : text);
+        lv_label_set_text(ui.connection_status[i], ui.demo_active ? "DEMO" : ui.simulated_input ? (ui.phone_connection == MOTO_UI_PHONE_ONLINE ? "DEMO" : "DEMO / PHONE LOST") : text);
     }
 }
 
@@ -1404,7 +1433,7 @@ void update_nav_status(const moto_ui_state_t *state) {
         lv_obj_set_style_text_color(ui.nav_status, kWhite, 0);
         return;
     }
-    if(state->mode != MOTO_UI_ARRIVED && state->route_point_count < 2) {
+    if(state->mode != MOTO_UI_ARRIVED && state->route_point_count < 2 && !state->has_next_maneuver) {
         // Empty navigation states are rendered by the full lifecycle surface,
         // never by a tiny diagnostic caption floating in a black screen.
         lv_label_set_text(ui.nav_status, "");
@@ -1424,11 +1453,35 @@ void update_nav_status(const moto_ui_state_t *state) {
         else if(state->off_route) { text = "OFF ROUTE"; color = kRed; }
         else if(state->gps_accuracy_m == 0) { text = "WAITING FOR GPS"; color = kAmber; }
     }
+    // Warnings keep priority; the smaller line carries the next action.
+    if(text[0] == '\0') {
+        text = state->maneuver_instruction ? state->maneuver_instruction : "沿路线前进";
+        color = kWhite;
+    }
+    if(state->mode == MOTO_UI_ARRIVED) text = "到达目的地";
     lv_label_set_text(ui.nav_status, text);
     lv_obj_set_style_text_color(ui.nav_status, color, 0);
 }
 
+bool navigation_road_has_glyphs(const char *text) {
+    if(text == nullptr) return true;
+    const lv_font_t *font = lv_obj_get_style_text_font(ui.nav_road, LV_PART_MAIN);
+    uint32_t index = 0;
+    while(text[index]) {
+        const uint32_t scalar = lv_text_encoded_next(text, &index);
+        lv_font_glyph_dsc_t glyph{};
+        if(scalar == 0 || !lv_font_get_glyph_dsc(font, &glyph, scalar, 0)) return false;
+    }
+    return true;
+}
+
 void update_navigation(const moto_ui_state_t *state) {
+    ui.compact_navigation_map = state->route_direction != nullptr;
+    lv_obj_set_size(ui.nav_marker, px(ui.compact_navigation_map ? 32 : 35),
+                    px(ui.compact_navigation_map ? 35 : 37));
+    if(ui.compact_navigation_map) lv_obj_set_pos(ui.nav_marker, 233 - px(16), 276 - px(17));
+    else lv_obj_set_pos(ui.nav_marker, px(163), px(177));
+    lv_obj_set_style_line_width(ui.nav_route, px(ui.compact_navigation_map ? 10 : 3), 0);
     update_building_geometry(state);
     update_road_geometry(state);
     update_route_geometry(state);
@@ -1439,12 +1492,15 @@ void update_navigation(const moto_ui_state_t *state) {
     // a connection state, not actionable navigation guidance.
     const bool has_guidance = ui.demo_active ||
                               state->mode == MOTO_UI_ARRIVED ||
-                              state->route_point_count >= 2;
+                              state->route_point_count >= 2 ||
+                              (state->has_next_maneuver && state->has_destination &&
+                               (state->mode == MOTO_UI_NAVIGATING || state->mode == MOTO_UI_OFFLINE || state->mode == MOTO_UI_REROUTING));
     ui.navigation_has_guidance = has_guidance;
     ui.navigation_route_request_in_flight =
         state->route_request_in_flight != 0;
     set_navigation_guidance_visible(has_guidance);
     refresh_lifecycle();
+    lv_obj_add_flag(ui.nav_map_note, LV_OBJ_FLAG_HIDDEN);
     if(!has_guidance) {
         lv_obj_remove_flag(ui.nav_map, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_text_font(ui.nav_status, &tertiary_font, 0);
@@ -1471,6 +1527,7 @@ void update_navigation(const moto_ui_state_t *state) {
     if(actionable || arrived) lv_obj_remove_flag(ui.nav_maneuver, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(ui.nav_maneuver, LV_OBJ_FLAG_HIDDEN);
     if(arrived) {
+        lv_obj_set_size(ui.nav_maneuver, px(70), px(65));
         update_maneuver(MOTO_MANEUVER_ARRIVE);
         lv_obj_add_flag(ui.nav_distance, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(ui.nav_unit, LV_OBJ_FLAG_HIDDEN);
@@ -1483,9 +1540,17 @@ void update_navigation(const moto_ui_state_t *state) {
         lv_obj_align(ui.nav_status, LV_ALIGN_TOP_MID, 0, px(205));
     } else {
         lv_obj_remove_flag(ui.nav_map, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(ui.nav_maneuver, px(75), px(43));
-        lv_obj_set_style_text_font(ui.nav_status, &tertiary_font, 0);
-        lv_obj_align(ui.nav_status, LV_ALIGN_TOP_MID, 0, px(320));
+        const bool fallback = state->route_point_count < 2;
+        lv_obj_set_size(ui.nav_maneuver, px(fallback ? 70 : 34), px(fallback ? 65 : 32));
+        lv_obj_align(ui.nav_maneuver, LV_ALIGN_TOP_MID, px(fallback ? 0 : -98), px(fallback ? 80 : 248));
+        if(fallback) {
+            lv_obj_add_flag(ui.nav_map, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(ui.nav_map_note, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_set_style_text_font(ui.nav_status,
+            state->route_direction ? &navigation_road_font :
+            state->online && !ui.demo_active ? &navigation_road_font : &tertiary_font, 0);
+        lv_obj_align(ui.nav_status, LV_ALIGN_TOP_MID, 0, px(293));
     }
     const bool warning = !arrived && (state->off_route || state->gnss_stale ||
                          state->gps_accuracy_m == 0 || state->mode == MOTO_UI_REROUTING);
@@ -1494,27 +1559,43 @@ void update_navigation(const moto_ui_state_t *state) {
         lv_obj_add_flag(ui.nav_unit, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_text_font(ui.nav_status, &navigation_status_font, 0);
         lv_obj_set_width(ui.nav_status, px(250));
-        lv_obj_align(ui.nav_status, LV_ALIGN_TOP_MID, 0, px(55));
+        lv_obj_align(ui.nav_status, LV_ALIGN_TOP_MID, 0, px(135));
+        lv_obj_add_flag(ui.nav_map, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(ui.nav_map_note, LV_OBJ_FLAG_HIDDEN);
     } else {
-        lv_obj_set_width(ui.nav_status, px(180));
+        lv_obj_set_width(ui.nav_status, px(230));
     }
-    lv_obj_align(ui.nav_road, LV_ALIGN_TOP_MID, 0, px(arrived ? 250 : 280));
-    lv_label_set_text(ui.nav_road, state->next_road_name ? state->next_road_name : "");
+    lv_obj_align(ui.nav_road, LV_ALIGN_TOP_MID, 0, px(arrived ? 250 : state->route_direction ? 20 : 280));
+    // Arbitrary provider road names exceed the competition's small CJK subset.
+    // Keep the verified action visible; omit an unrenderable road, not tofu.
+    // Planned direction is a compact top caption; the route is the centre.
+    // Next action remains below the distance. Arrival keeps its existing presentation.
+    const char *road = state->route_direction && !arrived
+                           ? state->route_direction : state->next_road_name;
+    lv_obj_set_width(ui.nav_road, px(230));
+    lv_obj_set_style_text_font(ui.nav_road, &navigation_road_font, 0);
+    lv_obj_set_height(ui.nav_road, 30);
+    if(warning) lv_obj_add_flag(ui.nav_road, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(ui.nav_road, road && navigation_road_has_glyphs(road) ? road : "");
     lv_obj_set_style_line_color(ui.nav_route,
-        state->off_route ? kRed : (state->gnss_stale || state->mode == MOTO_UI_REROUTING) ? kAmber : kIce, 0);
+        state->off_route ? kRed : (state->gnss_stale || state->mode == MOTO_UI_REROUTING) ? kAmber : ui.compact_navigation_map ? kWhite : kIce, 0);
+    lv_point_t distance_size{};
+    lv_text_get_size(&distance_size, value, &numeric_font, 0, 0, 10000, LV_TEXT_FLAG_NONE);
+    lv_obj_set_width(ui.nav_distance, std::min(px(180), static_cast<int>(distance_size.x) + 2));
     lv_label_set_text(ui.nav_distance, value);
     lv_label_set_text(ui.nav_unit, unit);
     // This number is never the total trip distance. Its physical attachment to
     // the maneuver glyph makes that meaning clear without an explanatory label.
-    lv_obj_align(ui.nav_distance, LV_ALIGN_TOP_LEFT, px(150), px(48));
-    lv_obj_align(ui.nav_unit, LV_ALIGN_TOP_MID, px(25), px(94));
+    lv_obj_align(ui.nav_distance, LV_ALIGN_TOP_MID, px(-12), px(236));
+    lv_obj_update_layout(ui.nav_distance);
+    lv_obj_align_to(ui.nav_unit, ui.nav_distance, LV_ALIGN_OUT_RIGHT_BOTTOM, px(8), -px(3));
 
     lv_arc_set_value(ui.nav_progress,
                      std::min<int>(100, state->route_progress_percent));
-    lv_obj_set_style_arc_color(ui.nav_progress, traffic_color(state->traffic),
+    lv_obj_set_style_arc_color(ui.nav_progress, ui.compact_navigation_map ? kWhite : traffic_color(state->traffic),
                                LV_PART_INDICATOR);
 
-    if(state->speed_limit_kph > 0 && !arrived) {
+    if(state->speed_limit_kph > 0 && !arrived && !state->route_direction) {
         char limit[8];
         std::snprintf(limit, sizeof(limit), "%u",
                       static_cast<unsigned>(state->speed_limit_kph));
@@ -1701,6 +1782,9 @@ void create_navigation_page() {
                                                  kRouteMotionFrameMs,
                                                  nullptr);
 
+    ui.nav_map_note = make_label(page, &tertiary_font, kQuiet, "ROUTE UNAVAILABLE");
+    lv_obj_align(ui.nav_map_note, LV_ALIGN_TOP_MID, 0, px(162));
+    lv_obj_add_flag(ui.nav_map_note, LV_OBJ_FLAG_HIDDEN);
     ui.nav_marker = lv_obj_create(ui.nav_map);
     lv_obj_remove_style_all(ui.nav_marker);
     lv_obj_set_size(ui.nav_marker, px(35), px(37));
@@ -1710,7 +1794,8 @@ void create_navigation_page() {
                         LV_EVENT_DRAW_MAIN_END, nullptr);
 
     lv_obj_t *hero = make_layer(page);
-    lv_obj_set_height(hero, px(120));
+    lv_obj_set_pos(hero, 0, 300);
+    lv_obj_set_height(hero, MOTO_UI_CANVAS_HEIGHT - 300);
     lv_obj_set_style_bg_color(hero, kBlack, 0);
     lv_obj_set_style_bg_opa(hero, LV_OPA_COVER, 0);
     ui.nav_road = make_label(page, &navigation_road_font, kWhite, "");
@@ -1729,8 +1814,8 @@ void create_navigation_page() {
     lv_obj_set_style_text_align(ui.nav_status, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(ui.nav_status, LV_ALIGN_TOP_MID, 0, px(320));
 
-    // The next action and fixed-width distance sit above the real map.
-    // This opaque hero strip keeps route geometry from crossing the labels.
+    // The lower instruction band follows the route-first instrument layout.
+    // Keep the map above it so consecutive corners remain visible.
     ui.nav_maneuver = lv_obj_create(page);
     lv_obj_remove_style_all(ui.nav_maneuver);
     lv_obj_set_size(ui.nav_maneuver, px(70), px(65));
@@ -1740,7 +1825,7 @@ void create_navigation_page() {
                         LV_EVENT_DRAW_MAIN_END, nullptr);
 
     ui.nav_distance = make_label(page, &numeric_font, kWhite, "--");
-    lv_obj_set_width(ui.nav_distance, px(150));
+    lv_obj_set_width(ui.nav_distance, px(180));
     lv_obj_set_style_text_align(ui.nav_distance, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(ui.nav_distance, LV_LABEL_LONG_DOT);
     ui.nav_unit = make_label(page, &secondary_font, kQuiet, "m");
@@ -1774,7 +1859,6 @@ void create_navigation_page() {
     lv_obj_set_style_arc_color(ui.nav_progress, kGraphite, LV_PART_MAIN);
     lv_obj_set_style_arc_width(ui.nav_progress, px(4), LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(ui.nav_progress, kIce, LV_PART_INDICATOR);
-    lv_obj_move_to_index(ui.nav_progress, 0);
 
     // Connection lifecycle overlay. The composition follows the same circular
     // safe area as the navigation instrument and intentionally uses one hero
@@ -2186,7 +2270,7 @@ extern "C" void moto_nav_ui_create(void) {
     create_compass_page();
     create_music_page();
     create_backtrack_page();
-    for(int i = 1; i < MOTO_UI_PAGE_COUNT; ++i) {
+    for(int i = 0; i < MOTO_UI_PAGE_COUNT; ++i) {
         ui.connection_status[i] = make_label(ui.pages[i], &tertiary_font, kAmber, "");
         lv_obj_align(ui.connection_status[i], LV_ALIGN_BOTTOM_MID, 0, px(-27));
     }
@@ -2348,4 +2432,9 @@ extern "C" void moto_nav_ui_set_demo_change_callback(
     moto_demo_change_callback_t callback, void *context) {
     ui.demo_callback = callback;
     ui.demo_callback_context = context;
+}
+
+extern "C" void moto_nav_ui_set_simulated_input(uint8_t enabled) {
+    ui.simulated_input = enabled != 0;
+    refresh_lifecycle();
 }

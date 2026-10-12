@@ -7,6 +7,11 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic) double latitudeDeg;
 @end
 
+@interface MotoNavMapPointValue : NSObject
+@property(nonatomic) int16_t x;
+@property(nonatomic) int16_t y;
+@end
+
 @interface MotoNavManeuverValue : NSObject
 @property(nonatomic) uint32_t identifier;
 @property(nonatomic, copy) NSString *typeName;
@@ -45,6 +50,8 @@ NS_ASSUME_NONNULL_BEGIN
 @end
 
 @interface MotoNavCoreSnapshot : NSObject
+@property(nonatomic, readonly, copy) NSString *routeDirection;
+@property(nonatomic, readonly, copy) NSArray<MotoNavMapPointValue *> *miniMapPoints;
 @property(nonatomic, readonly, copy) NSString *stateName;
 @property(nonatomic, readonly, copy) NSString *networkName;
 @property(nonatomic, readonly, copy) NSString *displayPageName;
