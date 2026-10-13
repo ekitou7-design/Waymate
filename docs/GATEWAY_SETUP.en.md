@@ -46,8 +46,8 @@ Run this in the current user's home directory on the server; the backend tests d
 initialised:
 
 ```sh
-git clone https://github.com/mx3353672833-debug/moto-gps-waveshare.git
-cd moto-gps-waveshare
+git clone https://github.com/ekitou7-design/Waymate.git
+cd Waymate
 node --version
 npm --prefix backend ci
 npm --prefix backend test
@@ -172,9 +172,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=YOUR_LINUX_USER
-WorkingDirectory=/YOUR_ABSOLUTE_PATH/moto-gps-waveshare
-EnvironmentFile=/YOUR_ABSOLUTE_PATH/moto-gps-waveshare/backend/.env
-ExecStart=/YOUR_ABSOLUTE_NODE_PATH /YOUR_ABSOLUTE_PATH/moto-gps-waveshare/backend/src/server.js
+WorkingDirectory=/YOUR_ABSOLUTE_PATH/Waymate
+EnvironmentFile=/YOUR_ABSOLUTE_PATH/Waymate/backend/.env
+ExecStart=/YOUR_ABSOLUTE_NODE_PATH /YOUR_ABSOLUTE_PATH/Waymate/backend/src/server.js
 Restart=on-failure
 RestartSec=3
 

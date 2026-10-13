@@ -6,14 +6,6 @@ A motorcycle navigation companion connecting an iPhone to a round AMOLED display
 
 [中文 / Full project introduction](README.md) · [RC2 release notes](FINAL_RELEASE_NOTES.md) · [Source publication audit](docs/final/GITHUB_SOURCE_RELEASE.md)
 
-## Why I Built Waymate
-
-I am a graduate student in cultural heritage and museum studies, with a non-computer-science background and an interest in product design, AI and software development.
-
-Waymate started as a gift idea for someone who enjoys riding motorcycles: a device that could show useful navigation information without repeatedly checking a phone. Learning to connect an iPhone app, ESP32-S3, round AMOLED, BLE communication and navigation data gradually turned that idea into a physical device.
-
-AI assisted the development process. The device itself does not perform AI inference.
-
 ## How It Works
 
 ```mermaid
@@ -61,36 +53,111 @@ This is a software-rendered LVGL preview, not a device photograph. Existing iPho
 
 ## Getting Started
 
+Start with **phone Demo → your iPhone → physical display → live navigation**. You do not need the hardware or a navigation API key to try Demo.
+
+| Goal | Requirements |
+| --- | --- |
+| Demo in a simulator | Mac, Xcode with Swift 6 support, XcodeGen |
+| Run on your iPhone | iOS 17+, your Apple signing settings and a data cable |
+| Use the physical display | Waveshare 1.75C board, ESP-IDF 5.5.5 and a real iPhone for BLE |
+| Live search and navigation | Location access, connectivity, your own HTTPS gateway and AMap Web Service key |
+
+The repository contains source, not a universally installable signed App. There is no ready-to-use Android App or public free navigation gateway.
+
+### 1. Prepare the Mac and download the source
+
+Install [Xcode](https://developer.apple.com/xcode/), launch it once to complete component installation, and install [Homebrew](https://brew.sh/) if `brew` is unavailable. Xcode 16.4 was used for RC2 verification.
+
+Open Terminal and run these commands one line at a time:
+
 ```sh
-git clone --recurse-submodules https://github.com/ekitou7-design/Waymate.git
-cd Waymate
 brew install xcodegen
-cd platforms/ios
+xcodebuild -version
+xcodegen --version
+cd ~
+git clone --recurse-submodules https://github.com/ekitou7-design/Waymate.git
+cd ~/Waymate
+```
+
+The clone includes pinned LVGL source. Do not clone again into an existing directory; use your existing checkout instead. GitHub's ordinary source ZIP does not include submodules. To fetch a missing submodule, run `git submodule update --init --recursive` from the repository root.
+
+### 2. Run Demo in a simulator
+
+```sh
+cd ~/Waymate/platforms/ios
 xcodegen generate
 open Waymate.xcodeproj
 ```
 
-Use Xcode with Swift 6 support (validated with Xcode 16.4); iOS 17+ is required. Choose a simulator for Demo. For your own phone, select your signing Team in Xcode and configure an appropriate Bundle ID. Existing installations should retain their Bundle ID for data continuity. Live navigation needs your own [gateway configuration](docs/GATEWAY_SETUP.en.md); the default URL is a placeholder.
+Choose the **Waymate** scheme and an **iPhone simulator**, then click Run or press `⌘R`. Install an iOS simulator runtime in Xcode Settings → Components / Platforms if none is available. Open **More → Demo Mode**, select a route and press Start.
 
-For ESP32, install ESP-IDF 5.5.5 and run from the repository root:
+A phone display preview labelled **DEMO / simulation**, with changing route, distance and phases, confirms your first software run. No signing Team or gateway is needed for this path. A simulator cannot validate physical BLE.
+
+### 3. Run on your iPhone
+
+Add your Apple account in Xcode Settings → Accounts. Connect and trust the phone, enable Developer Mode when prompted, and select the phone as the run destination.
+
+New installations should set unique App and test `PRODUCT_BUNDLE_IDENTIFIER` values in `platforms/ios/project.yml`, then regenerate the project. Existing installations should retain their Bundle ID to preserve data continuity. After generation, choose your own Team with automatic signing in the Waymate target's Signing & Capabilities. Click Run, grant location and Bluetooth permissions as needed, and try Demo first. See [iPhone setup](platforms/ios/README.en.md).
+
+### 4. Build the physical display firmware
+
+Follow the [official ESP-IDF 5.5.5 installation guide](https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32s3/get-started/index.html) for ESP32-S3. This example assumes the SDK is installed at `~/esp/esp-idf-v5.5.5`; adjust that path if needed:
 
 ```sh
-. /path/to/esp-idf-v5.5.5/export.sh
+. ~/esp/esp-idf-v5.5.5/export.sh
+idf.py --version
+cd ~/Waymate
 python3 scripts/rebind_lvgl_lock.py
 idf.py -C platforms/esp32 -B build-esp32 build
 ```
 
-LVGL is pinned as a Git submodule. ESP-IDF fetches managed dependencies from the lock file. Building does not flash a device. Before updating an already paired device, verify partitions, make and verify NVS and App backups, and follow the [App-only installation and rollback instructions](docs/final/INSTALL_AND_ROLLBACK.md).
+Expect `Project build complete` and `build-esp32/moto_gps_esp32.bin`. Managed dependencies are downloaded from the lock file. Building does not install firmware.
 
-See [software checks](docs/TESTING.en.md) and the [device acceptance checklist](docs/final/DEVICE_ACCEPTANCE.md).
+Read the [Waveshare DIY guide](docs/WAVESHARE_DIY_GUIDE.en.md) before your first installation. For an existing paired device, verify partitions and current NVS/App backups before an App-only update. The [installation and rollback record](docs/final/INSTALL_AND_ROLLBACK.md) describes a local delivery; its private signed App and device-specific scripts are not supplied in this public repository. Do not copy its personal device paths or blindly use the build log's full-flash command.
+
+After installation, boot normally and connect from the App's display entry. Confirm real BLE/Ready status before Demo. A real iPhone is required for physical BLE; the devices do not need a shared Wi-Fi network. Earlier firmware does not prove the RC2 UI is installed.
+
+### 5. Configure live navigation
+
+Deploy your own [Node.js gateway](docs/GATEWAY_SETUP.en.md) or [Cloudflare Workers + R2 gateway](backend/cloudflare/README.en.md). Store your **AMap Web Service key on the server**.
+
+Open gateway settings from the phone's home-screen gear, enter your HTTPS base address, test the connection and save. `example.invalid` is a placeholder. Verify actual search and route requests while stationary before testing movement. Ordinary driving routes have not been fully validated for motorcycle restrictions.
+
+### 6. Optional software checks
+
+Development checks need CMake, a C++ compiler and Node.js 24+ in addition to Xcode. Run from the repository root:
+
+```sh
+cd ~/Waymate
+cmake -S . -B build/native -DMOTO_BUILD_WEB=OFF -DMOTO_BUILD_TESTS=ON
+cmake --build build/native --parallel 4
+ctest --test-dir build/native --output-on-failure
+npm ci --prefix backend
+npm --prefix backend test
+swift test --package-path platforms/ios
+```
+
+These checks do not flash hardware or require live API keys. See [testing](docs/TESTING.en.md) and the [device acceptance checklist](docs/final/DEVICE_ACCEPTANCE.md).
+
+## FAQ
+
+| Problem | First check |
+| --- | --- |
+| No display hardware | Try Demo using the phone preview. |
+| `brew` or `xcodegen` not found | Complete Homebrew environment setup, then install XcodeGen. |
+| Missing Xcode project | Run `xcodegen generate` in `platforms/ios`. |
+| Missing LVGL | Initialize Git submodules from the repository root. |
+| Xcode asks for a Team | Choose a simulator for software Demo, or your own signing Team for a phone. |
+| `idf.py` not found | Enable the installed ESP-IDF 5.5.5 environment in the current terminal. |
+| Destination search fails | Replace the placeholder gateway; check HTTPS, paths, server, key and quota. |
+| Simulator does not connect to BLE | Use a real iPhone and grant Bluetooth access. |
+| Downloaded maps but no offline route planning | Downloads are road/building backgrounds, not offline search or rerouting. |
+
+See the [full project directory index](README.md#project-structure) and [usage flows](README.md#使用流程).
 
 ## Roadmap
 
 Complete RC2 boot, display and reconnect acceptance; test live Navigation, Ride and Backtrack on roads; improve readability and stability from observed results and add version-labelled physical photos and videos.
-
-## About the Creator
-
-**[ekitou7-design](https://github.com/ekitou7-design)** — a graduate student in cultural heritage and museum studies exploring product design through practical needs, AI-assisted development and hardware experiments.
 
 ## License & Credits
 
