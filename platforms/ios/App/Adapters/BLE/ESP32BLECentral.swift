@@ -254,6 +254,7 @@ final class ESP32BLECentral: NSObject {
     private var codec: MotoBLEProtocolCodec?
     private var handshake: BLEHandshakeGate?
     private var navigationState = BLENavigationStateCache()
+    private var simulatedInput = false
     private(set) var backtrackState = BLEBacktrackStateCache()
     private var backtrackDelivery = BLEBacktrackGeometryDelivery()
     private var backtrackStatePending = false
@@ -348,7 +349,8 @@ final class ESP32BLECentral: NSObject {
         backtrackStatePending = backtrackState.state != nil
     }
 
-    func sendNavigationSnapshot(_ state: MotoNavCoreSnapshot, displayPage: RoundDisplayPage? = nil) {
+    func sendNavigationSnapshot(_ state: MotoNavCoreSnapshot, displayPage: RoundDisplayPage? = nil, simulated: Bool = false) {
+        simulatedInput = simulated
         if backtrackState.usesIndependentState(peerCapabilities: peerCapabilities) {
             // Guidance and selection travel independently in BacktrackState.
             // The unchanged real idle NavCore snapshot is a mode-boundary baseline,
@@ -1230,7 +1232,8 @@ final class ESP32BLECentral: NSObject {
         input.accuracyDecimeters = UInt16(clamping: Int((state.horizontalAccuracyM * 10).rounded()))
         input.crossTrackDecimeters = UInt16(clamping: Int((state.crossTrackDistanceM * 10).rounded()))
         input.roundaboutExit = state.roundaboutExit
-        input.roadName = state.roadName
+        // Reserved text marker in the existing v1 field, no packet/UUID changes.
+        input.roadName = simulatedInput ? "WAYMATE DEMO" : state.roadName
         input.instructionText = state.instructionText
         input.trafficName = state.trafficName
         return input

@@ -32,3 +32,20 @@ backups/
 
 # Local Cloudflare emulator state (also when tests run from the repository root)
 .wrangler/
+
+# Private signing, pairing and local account data
+*.pfx
+*.cer
+*.certSigningRequest
+*.provisionprofile
+*.keystore
+*.jks
+.env.local
+.secrets/
+private/
+.nvs-backups/
+nvs_backup*/
+*nvs*backup*.bin
+*bond*backup*
+.sdkconfig.*.local
+platforms/esp32/sdkconfig.*.live

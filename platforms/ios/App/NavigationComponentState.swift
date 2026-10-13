@@ -13,6 +13,7 @@ struct NavigationComponentState: Equatable, Sendable {
     }
 
     // Preserve the Bridge's phase names; this is not NavigationSession's phase.
+    let routeDirection: String
     let phase: String
     let routeIdentity: String?
     let routeGeneration: UInt32
@@ -35,6 +36,7 @@ struct NavigationComponentState: Equatable, Sendable {
     }
 
     init(snapshot: MotoNavCoreSnapshot) {
+        routeDirection = snapshot.routeDirection
         phase = snapshot.stateName
         routeIdentity = snapshot.routeID.isEmpty ? nil : snapshot.routeID
         routeGeneration = snapshot.routeGeneration

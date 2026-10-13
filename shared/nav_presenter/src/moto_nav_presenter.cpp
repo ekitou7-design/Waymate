@@ -1,3 +1,4 @@
+#include "moto_route_direction.h"
 #include "moto_nav_presenter.hpp"
 
 #include <algorithm>
@@ -10,16 +11,6 @@ namespace {
 
 constexpr double kEarthRadiusM = 6'371'000.0;
 constexpr double kPi = 3.14159265358979323846;
-constexpr double kLegacyCanvasSize = 360.0;
-constexpr double kUiScale =
-    static_cast<double>(MOTO_UI_CANVAS_WIDTH) / kLegacyCanvasSize;
-constexpr double kVehicleX = MOTO_UI_CANVAS_WIDTH / 2.0;
-constexpr double kVehicleY = 196.0 * kUiScale;
-// A navigation minimap is a spatial frame of reference, so it must not jump
-// between zoom levels as a maneuver counter crosses an arbitrary threshold.
-// This fixed street-scale view shows roughly 400 m ahead on the 466 px round
-// display and is shared by the selected route and all context roads.
-constexpr double kMapPixelsPerMeter = 0.44 * kUiScale;
 
 double radians(double degrees) { return degrees * kPi / 180.0; }
 
@@ -62,7 +53,6 @@ moto_maneuver_t map_maneuver(ManeuverType maneuver) {
       return MOTO_MANEUVER_SLIGHT_RIGHT;
     case ManeuverType::Right:
     case ManeuverType::SharpRight:
-    case ManeuverType::Exit:
       return MOTO_MANEUVER_RIGHT;
     case ManeuverType::UTurnLeft:
     case ManeuverType::UTurnRight:
@@ -71,12 +61,40 @@ moto_maneuver_t map_maneuver(ManeuverType maneuver) {
       return MOTO_MANEUVER_ROUNDABOUT;
     case ManeuverType::Arrive:
       return MOTO_MANEUVER_ARRIVE;
+    case ManeuverType::Exit:
     case ManeuverType::Unknown:
     case ManeuverType::Continue:
       return MOTO_MANEUVER_STRAIGHT;
   }
   return MOTO_MANEUVER_STRAIGHT;
 }
+
+const char* maneuver_instruction(const Maneuver& maneuver) {
+  switch (maneuver.type) {
+    case ManeuverType::Continue: return "继续直行";
+    case ManeuverType::Left:
+    case ManeuverType::SharpLeft: return "前方左转";
+    case ManeuverType::Right:
+    case ManeuverType::SharpRight: return "前方右转";
+    case ManeuverType::UTurnLeft:
+    case ManeuverType::UTurnRight: return "前方掉头";
+    case ManeuverType::SlightLeft:
+      return maneuver.instruction.find("靠左") != std::string::npos
+                 ? "靠左行驶" : "向左前方";
+    case ManeuverType::SlightRight:
+      return maneuver.instruction.find("靠右") != std::string::npos
+                 ? "靠右行驶" : "向右前方";
+    case ManeuverType::Roundabout: return "进入环岛";
+    case ManeuverType::Exit: return "驶出环岛";
+    case ManeuverType::Arrive: return "到达目的地";
+    case ManeuverType::Unknown: return "沿路线前进";
+  }
+  return "沿路线前进";
+}
+
+// This is a conservative display projection, not a new route matcher. The
+// route window can include points behind the rider; its first segment is not
+// necessarily current. Never use the phone/IMU heading or next maneuver text.
 
 moto_traffic_t map_traffic(TrafficLevel traffic) {
   switch (traffic) {
@@ -146,62 +164,17 @@ std::uint32_t route_identity(const std::string& route_id) {
   return hash == 0 ? 1 : hash;
 }
 
-struct MapTransform {
-  double origin_latitude_deg = 0.0;
-  double origin_longitude_deg = 0.0;
-  double longitude_pixels_per_degree = 1.0;
-  float sin_heading = 0.0F;
-  float cos_heading = 1.0F;
-};
-
-MapTransform map_transform(const NavSnapshot& snapshot) {
-  const double finite_heading =
-      std::isfinite(snapshot.heading_deg) ? snapshot.heading_deg : 0.0;
-  const double heading = radians(finite_heading);
-  return {
-      snapshot.route_view_origin.latitude_deg,
-      snapshot.route_view_origin.longitude_deg,
-      std::cos(radians(snapshot.route_view_origin.latitude_deg)) *
-          (kPi / 180.0 * kEarthRadiusM * kMapPixelsPerMeter),
-      static_cast<float>(std::sin(heading)),
-      static_cast<float>(std::cos(heading)),
-  };
-}
-
-moto_ui_point_t project_map_point(const Gcj02Point& point,
-                                  const MapTransform& transform) {
-  // Subtract geographic doubles before converting to screen-space floats.
-  // Casting lat/lon first would lose metres of precision; after subtraction,
-  // float is precise well below one pixel and avoids software-double rotation
-  // for hundreds of points on the ESP32-S3's single-precision FPU.
-  const float east = static_cast<float>(
-      (point.longitude_deg - transform.origin_longitude_deg) *
-      transform.longitude_pixels_per_degree);
-  const float north = static_cast<float>(
-      (point.latitude_deg - transform.origin_latitude_deg) *
-      (kPi / 180.0 * kEarthRadiusM * kMapPixelsPerMeter));
-
-  // Heading-up transform: the rider remains fixed and every real street
-  // translates/rotates together under it, as on an automotive minimap.
-  const float right = east * transform.cos_heading -
-                       north * transform.sin_heading;
-  const float forward = east * transform.sin_heading +
-                         north * transform.cos_heading;
-  const float x = static_cast<float>(kVehicleX) + right;
-  const float y = static_cast<float>(kVehicleY) - forward;
-  return {
-      static_cast<std::int16_t>(
-          std::clamp(std::lround(x), -2'000L, 2'000L)),
-      static_cast<std::int16_t>(
-          std::clamp(std::lround(y), -2'000L, 2'000L)),
-  };
+using MapTransform = MiniMapTransform;
+moto_ui_point_t project_map_point(const Gcj02Point& point, const MapTransform& transform) {
+  const auto p = mini_map_project(point, transform);
+  return {p.x, p.y};
 }
 
 void project_route_view(const NavSnapshot& snapshot,
                         const MapTransform& transform,
                         moto_ui_state_t& output) {
   output.route_point_count = 0;
-  if (!snapshot.has_route_view || snapshot.route_view_point_count < 2) {
+  if (!mini_map_has_geometry(snapshot)) {
     return;
   }
 
@@ -312,12 +285,17 @@ void NavPresenter::update(const NavSnapshot& snapshot) {
     // both C pointers have an explicit, stable lifetime. A future current-road
     // field can replace road_name_ without changing moto_ui_state_t.
     road_name_ = snapshot.next_maneuver.road_name;
-    next_road_name_ = snapshot.next_maneuver.road_name.empty()
-                          ? snapshot.next_maneuver.instruction
-                          : snapshot.next_maneuver.road_name;
+    next_road_name_ = snapshot.next_maneuver.road_name;
   }
 
+  maneuver_instruction_ = snapshot.state == NavState::Arrived
+                              ? "到达目的地"
+                              : snapshot.has_next_maneuver
+                                    ? maneuver_instruction(snapshot.next_maneuver)
+                                    : "沿路线前进";
   ui_state_ = {};
+  ui_state_.maneuver_instruction = maneuver_instruction_.c_str();
+  ui_state_.route_direction = planned_route_direction(snapshot);
   ui_state_.page = map_page(snapshot.display_page);
   ui_state_.mode = map_mode(snapshot);
   ui_state_.maneuver =
@@ -338,7 +316,8 @@ void NavPresenter::update(const NavSnapshot& snapshot) {
   ui_state_.gnss_stale = snapshot.gnss_stale ? 1 : 0;
   ui_state_.off_route = snapshot.off_route ? 1 : 0;
   ui_state_.has_next_maneuver = snapshot.has_next_maneuver &&
-      snapshot.next_maneuver.type != ManeuverType::Unknown;
+      snapshot.next_maneuver.type != ManeuverType::Unknown &&
+      snapshot.next_maneuver.type != ManeuverType::Exit;
   // BLE v1 has no independent course validity flag. Conservatively hide the
   // compass below the existing fusion anchor speed; never claim true north.
   ui_state_.heading_available = snapshot.has_usable_fix && !snapshot.gnss_stale &&
@@ -362,7 +341,7 @@ void NavPresenter::update(const NavSnapshot& snapshot) {
   // Route, roads and buildings share one rider-centred transform. Besides
   // guaranteeing exact layer alignment, this avoids repeating trigonometry
   // hundreds of times on every high-rate IMU frame.
-  const MapTransform transform = map_transform(snapshot);
+  const MapTransform transform = map_camera_.update(snapshot);
   project_route_view(snapshot, transform, ui_state_);
   project_road_context(snapshot, transform, ui_state_);
   project_building_context(snapshot, transform, ui_state_);

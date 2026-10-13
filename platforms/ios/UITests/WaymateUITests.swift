@@ -483,50 +483,71 @@ final class WaymateUITests: XCTestCase {
 
     func testBuiltInNavigationDemoStarts() throws {
         let app = XCUIApplication()
+        app.launchArguments = ["--moto-ui-offline"]
         app.launch()
-
         reveal(app.buttons["更多"], in: app)
         app.buttons["更多"].tap()
-        let demo = app.buttons["demo-navigation-button"]
-        XCTAssertTrue(demo.waitForExistence(timeout: 5))
-        reveal(demo, in: app)
-        demo.tap()
-
-        // Demo may briefly show acquiring/planning before navigating.
-        let end = app.buttons["结束导航"]
-        XCTAssertTrue(end.waitForExistence(timeout: 15))
-        XCTAssertTrue(end.isEnabled)
-        keepScreenshot(of: app, named: "Waymate native navigation — demo")
-        let display = app.buttons["device-details-button"]
-        XCTAssertTrue(display.exists)
-        XCTAssertTrue(display.isHittable)
-        display.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["device-details-sheet"].waitForExistence(timeout: 3))
-        app.buttons["device-details-done"].tap()
-        XCTAssertTrue(end.waitForExistence(timeout: 3))
+        let entry = app.buttons["demo-navigation-button"]
+        reveal(entry, in: app); entry.tap()
+        XCTAssertTrue(app.staticTexts["competition-demo-label"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["模拟圆屏 / DEMO PREVIEW"].exists)
+        reveal(app.buttons["competition-demo-next"], in: app); app.buttons["competition-demo-next"].tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "competition-demo-junction-map").firstMatch.exists)
+        XCTAssertEqual(app.staticTexts["competition-demo-direction"].label, "东")
+        XCTAssertEqual(app.staticTexts["competition-demo-action"].label, "前方右转")
+        keepScreenshot(of: app, named: "SIMULATED — Navigation Demo Preview")
+        let scenario = app.buttons["competition-demo-route-scenario"]
+        reveal(scenario, in: app); scenario.tap()
+        app.buttons["左转"].tap()
+        XCTAssertEqual(app.staticTexts["competition-demo-action"].label, "前方左转")
+        reveal(app.staticTexts["competition-demo-label"], in: app)
+        keepScreenshot(of: app, named: "SIMULATED — Left Route Demo Preview")
+        reveal(app.buttons["competition-demo-play"], in: app); app.buttons["competition-demo-play"].tap()
+        sleep(2)
+        reveal(app.buttons["competition-demo-play"], in: app); app.buttons["competition-demo-play"].tap()
+        XCTAssertTrue(app.staticTexts["已暂停 · 可以手动推进"].exists)
+        reveal(app.buttons["competition-demo-ride"], in: app); app.buttons["competition-demo-ride"].tap()
+        reveal(app.buttons["competition-demo-next"], in: app); app.buttons["competition-demo-next"].tap()
+        keepScreenshot(of: app, named: "SIMULATED — Ride Demo Preview")
+        reveal(app.buttons["competition-demo-backtrack"], in: app); app.buttons["competition-demo-backtrack"].tap()
+        keepScreenshot(of: app, named: "SIMULATED — Backtrack Demo Preview")
+        reveal(app.buttons["competition-demo-replay"], in: app); app.buttons["competition-demo-replay"].tap()
+        reveal(app.buttons["competition-demo-play"], in: app); app.buttons["competition-demo-play"].tap()
+        XCTAssertTrue(app.staticTexts["模拟路线规划"].exists)
+        app.buttons["competition-demo-exit"].tap()
+        XCTAssertTrue(app.textFields["destination-search-field"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["competition-demo-label"].exists)
     }
 
     func testEndingDemoNavigationReturnsToHome() throws {
         let app = XCUIApplication()
+        app.launchArguments = ["--moto-ui-offline"]
         app.launch()
-
-        reveal(app.buttons["更多"], in: app)
-        app.buttons["更多"].tap()
+        reveal(app.buttons["更多"], in: app); app.buttons["更多"].tap()
         let demo = app.buttons["demo-navigation-button"]
-        XCTAssertTrue(demo.waitForExistence(timeout: 5))
-        reveal(demo, in: app)
-        demo.tap()
-
-        let end = app.buttons["结束导航"]
-        XCTAssertTrue(end.waitForExistence(timeout: 15))
-        end.tap()
-
-        // Ending navigation must clear the stuck route-preview state and
-        // bring the rider back to the destination-search home screen.
+        reveal(demo, in: app); demo.tap()
+        XCTAssertTrue(app.buttons["competition-demo-exit"].waitForExistence(timeout: 5))
+        app.buttons["competition-demo-exit"].tap()
         XCTAssertTrue(app.textFields["destination-search-field"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["demo-navigation-button"].exists)
-        XCTAssertFalse(end.exists)
         XCTAssertFalse(app.staticTexts["正在骑行"].exists)
+    }
+
+    func testCompetitionAutoCompletesOffline() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--moto-ui-offline"]
+        app.launch()
+        reveal(app.buttons["更多"], in: app); app.buttons["更多"].tap()
+        let entry = app.buttons["demo-navigation-button"]
+        reveal(entry, in: app); entry.tap()
+        let play = app.buttons["competition-demo-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5))
+        reveal(play, in: app); play.tap()
+        let done = app.staticTexts["模拟演示完成"]
+        XCTAssertTrue(done.waitForExistence(timeout: 95))
+        XCTAssertTrue(app.staticTexts["已返回起点"].exists)
+        keepScreenshot(of: app, named: "SIMULATED — Complete 84-second Demo")
+        app.buttons["competition-demo-exit"].tap()
+        XCTAssertTrue(app.textFields["destination-search-field"].waitForExistence(timeout: 3))
     }
 
     /// Keeps a real route-preview screenshot in the test result so layout

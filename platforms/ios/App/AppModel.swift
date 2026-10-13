@@ -9,6 +9,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var navigationFailure: String?
     @Published private(set) var isNavigationActive = false
     @Published private(set) var isDemoActive = false
+    @Published private(set) var competitionDemo: CompetitionDemo?
+    var canEnterCompetitionDemo: Bool { !isNavigationActive && !rideActive && !isBacktrackActive && !isUpdatingGateway && !isPlanningRoutePreview }
     @Published private var rideSession = RideSession()
 
     @Published private(set) var backtrackSession: BacktrackSession?
@@ -33,6 +35,7 @@ final class AppModel: ObservableObject {
     }
 
     func startBacktrack() {
+        guard competitionDemo == nil else { return }
         guard !isBacktrackActive else { return }
         guard backtrackUnavailableReason == nil, let startedAt = rideSession.startedAt else {
             backtrackFailure = backtrackUnavailableReason
@@ -123,6 +126,7 @@ final class AppModel: ObservableObject {
     var rideCurrentSpeed: Double? { rideSession.currentSpeed(at: rideNow()) }
 
     func startRide() {
+        guard competitionDemo == nil else { return }
         guard !rideSession.isActive else { return }
         guard subscribeRideLocation() else { return }
         rideSession.start(at: rideNow())
@@ -350,7 +354,8 @@ final class AppModel: ObservableObject {
         }
 
         surroundingMap.onScene = { [weak self] scene in
-            self?.bluetooth.sendMapScene(scene)
+            guard let self, self.competitionDemo == nil else { return }
+            self.bluetooth.sendMapScene(scene)
         }
 
         bluetooth.onSnapshotChange = { [weak self] snapshot in
@@ -360,6 +365,11 @@ final class AppModel: ObservableObject {
             guard let self else { return .failed }
             switch command.kind {
             case 0:
+                if let demo = self.competitionDemo {
+                    let accepted = demo.selectPage(command.page)
+                    self.publishCompetitionDemo()
+                    return accepted ? .accepted : .unsupported
+                }
                 return self.presentationDriver.manuallySelect(rawValue: command.page)
                     ? .accepted
                     : .unsupported
@@ -378,7 +388,9 @@ final class AppModel: ObservableObject {
             self.publishRoundDisplay(page: page)
         }
         bluetooth.onDisplayResynchronization = { [weak self] in
-            self?.presentationDriver.resynchronize()
+            guard let self else { return }
+            if self.competitionDemo != nil { self.publishCompetitionDemo() }
+            else { self.presentationDriver.resynchronize() }
         }
         updatePresentation()
         searchLocation.onLocationChange = { [weak self] point in
@@ -557,7 +569,7 @@ final class AppModel: ObservableObject {
     }
 
     func destinationQueryDidChange() {
-        guard !isNavigationActive, !isUpdatingGateway else { return }
+        guard competitionDemo == nil, !isNavigationActive, !isUpdatingGateway else { return }
         navigationFailure = nil
         let query = destinationQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if selectedPlace?.name == query {
@@ -577,7 +589,7 @@ final class AppModel: ObservableObject {
     }
 
     func submitDestinationSearch() {
-        guard !isNavigationActive, !isUpdatingGateway else { return }
+        guard competitionDemo == nil, !isNavigationActive, !isUpdatingGateway else { return }
         searchLocation.refresh()
         let query = destinationQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         schedulePlaceSearch(query: query, delay: .zero)
@@ -661,7 +673,7 @@ final class AppModel: ObservableObject {
     /// Tests can supply a route provider without permissions or network requests.
     func beginLiveNavigation(destination: WGS84Point, destinationPOIID: String? = nil,
                              routeProvider: any NavigationRouteProviding) {
-        guard !isNavigationActive, !isUpdatingGateway else { return }
+        guard competitionDemo == nil, !isNavigationActive, !isUpdatingGateway else { return }
         guard confirmNavigationReplacement({ [weak self] in
             self?.beginLiveNavigation(destination: destination, destinationPOIID: destinationPOIID, routeProvider: routeProvider)
         }) else { return }
@@ -689,31 +701,25 @@ final class AppModel: ObservableObject {
     }
 
     func startDemoNavigation() {
-        guard !isNavigationActive, !isUpdatingGateway else { return }
-        guard confirmNavigationReplacement({ [weak self] in self?.startDemoNavigation() }) else { return }
-        surroundingMap.reset()
-        runtime?.stop()
-        let demoSession = DemoNavigationSession()
-        let runtime = SharedNavigationRuntime(
-            locationSource: DemoNavigationLocationSource(session: demoSession),
-            routeProvider: DemoNavigationRouteProvider(
-                liveProvider: liveRouteProvider,
-                session: demoSession
-            )
-        )
-        bind(runtime)
-        self.runtime = runtime
-        navigationFailure = nil
-        isDemoActive = true
-        let started = runtime.start(
-            destination: JinanDemoFixture.requestedDestinationWGS84,
-            destinationPOIID: JinanDemoFixture.destinationPOIID
-        )
-        isNavigationActive = started
-        if !started {
-            isDemoActive = false
-            self.runtime = nil
-        }
+        guard canEnterCompetitionDemo, competitionDemo == nil else { return }
+        let demo = CompetitionDemo()
+        competitionDemo = demo
+        demo.onFrame = { [weak self] in self?.publishCompetitionDemo() }
+        publishCompetitionDemo()
+    }
+
+    func exitCompetitionDemo() {
+        competitionDemo?.pause()
+        competitionDemo?.onFrame = nil
+        competitionDemo = nil
+        // Restore the latest real idle state and send any Backtrack End tombstone.
+        presentationDriver.resynchronize()
+    }
+
+    private func publishCompetitionDemo() {
+        guard let demo = competitionDemo else { return }
+        bluetooth.sendBacktrack(session: demo.backtrack, paused: false, page: demo.page)
+        bluetooth.sendNavigationSnapshot(demo.snapshot, displayPage: demo.page == .backtrack ? .speed : demo.page, simulated: true)
     }
 
     func stopNavigation() {
@@ -809,6 +815,7 @@ final class AppModel: ObservableObject {
     }
 
     private func publishRoundDisplay(page: RoundDisplayPage) {
+        guard competitionDemo == nil else { return }
         bluetooth.sendBacktrack(session: backtrackSession, paused: rideSession.state == .paused, page: page)
         // The real NavCore state remains independent. New page is sent only by BacktrackState.
         bluetooth.sendNavigationSnapshot(navigation, displayPage: page == .backtrack ? .speed : page)

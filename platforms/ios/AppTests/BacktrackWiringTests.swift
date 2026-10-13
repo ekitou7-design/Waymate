@@ -139,10 +139,12 @@ final class BacktrackWiringTests: XCTestCase {
         XCTAssertEqual(source.starts, 1)
         model.stopNavigation(); model.stopRide(); await model.waitForRidePersistence()
     }
-    func testDemoAlsoRequiresConfirmationAndEndRideCancelsPendingSwitch() async {
+    func testDemoCannotReplaceActiveRideOrBacktrack() async {
         let source = BacktrackWiringSource(), model = model(source)
         outward(model, source); model.startBacktrack(); model.startDemoNavigation()
-        XCTAssertEqual(model.guidanceConflict, .startNavigation)
+        XCTAssertNil(model.guidanceConflict)
+        XCTAssertNil(model.competitionDemo)
+        XCTAssertTrue(model.isBacktrackActive)
         XCTAssertFalse(model.isDemoActive)
         model.stopRide()
         XCTAssertNil(model.guidanceConflict)

@@ -955,6 +955,15 @@ extern "C" esp_err_t board_port_reveal_display(void) {
   return ESP_OK;
 }
 
+extern "C" esp_err_t board_port_drain_display(void) {
+  if (panel == nullptr || !display_revealed) {
+    return ESP_ERR_INVALID_STATE;
+  }
+  // A parameter command recycles preceding color transactions before sending.
+  // Reuse the current brightness: no pixel buffer or new allocation is needed.
+  return esp_lcd_panel_co5300_set_brightness(panel, 100);
+}
+
 extern "C" bool board_port_lock(uint32_t timeout_ms) {
   if (display == nullptr) {
     return false;

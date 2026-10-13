@@ -66,7 +66,7 @@ if(TARGET lvgl)
   target_compile_definitions(lvgl PRIVATE
     CONFIG_LV_MEM_SIZE=${MOTO_NATIVE_LVGL_HEAP_BYTES})
   add_executable(nav_ui_render_tests nav_ui_render_tests.cpp)
-  target_link_libraries(nav_ui_render_tests PRIVATE moto_nav_ui lvgl)
+  target_link_libraries(nav_ui_render_tests PRIVATE moto_nav_presenter moto_nav_ui lvgl)
   target_compile_features(nav_ui_render_tests PRIVATE cxx_std_17)
 endif()
 
@@ -130,6 +130,9 @@ target_compile_features(phone_nav_bridge_tests PRIVATE cxx_std_17)
 add_test(NAME nav_core_tests COMMAND nav_core_tests)
 if(TARGET nav_ui_render_tests)
   add_test(NAME nav_ui_render_tests COMMAND nav_ui_render_tests)
+  add_test(NAME competition_nav_ui_tests COMMAND nav_ui_render_tests)
+  set_tests_properties(competition_nav_ui_tests PROPERTIES
+    ENVIRONMENT "MOTO_UI_COMPETITION_ONLY=1")
 endif()
 add_test(NAME nav_app_tests COMMAND nav_app_tests)
 add_test(NAME nav_presenter_tests COMMAND nav_presenter_tests)

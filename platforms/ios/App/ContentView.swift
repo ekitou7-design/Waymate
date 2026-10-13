@@ -54,6 +54,10 @@ struct ContentView: View {
             Button("确认切换", action: model.confirmGuidanceSwitch).accessibilityIdentifier("guidance-switch-confirm")
             Button("取消", role: .cancel, action: model.cancelGuidanceSwitch)
         }
+        .fullScreenCover(isPresented: Binding(get: { model.competitionDemo != nil },
+                                               set: { if !$0 { model.exitCompetitionDemo() } })) {
+            if let demo = model.competitionDemo { CompetitionDemoView(demo: demo, model: model) }
+        }
         .sheet(isPresented: $showsDeviceDetails) { deviceDetails }
         .sheet(isPresented: $showsMapDownloads) {
             MapDownloadsView(
@@ -361,8 +365,8 @@ struct ContentView: View {
         } label: {
             Label {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("演示导航").foregroundStyle(Color.primary)
-                    Text("先体验一次导航流程")
+                    Text("Demo Mode · 演示模式").foregroundStyle(Color.primary)
+                    Text(model.canEnterCompetitionDemo ? "离线自动演示 · Navigation / Ride / Backtrack" : "结束正式导航与 Ride 后可进入演示")
                         .font(.subheadline)
                         .foregroundStyle(Color.secondary)
                 }
@@ -371,6 +375,7 @@ struct ContentView: View {
             }
             .padding(.vertical, 5)
         }
+        .disabled(!model.canEnterCompetitionDemo)
         .accessibilityIdentifier("demo-navigation-button")
     }
 
@@ -516,6 +521,8 @@ struct ContentView: View {
     private var activeNavigationScreen: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                ActiveNavigationMap(points: model.mapDownloadRoute, snapshot: model.navigation)
+                    .frame(height: 300).clipShape(RoundedRectangle(cornerRadius: 16))
                 ActiveNavigationView(state: model.navigationComponentState, failure: model.navigationFailure,
                                      destination: model.activeDestinationName, duration: remainingDuration,
                                      distance: remainingDistance, rideActive: model.rideActive,

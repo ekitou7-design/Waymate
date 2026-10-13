@@ -707,9 +707,36 @@ void test_backtrack_geometry_state_ordering_tombstone_and_reconnect() {
   CHECK(sender.commands.empty()); // No Start/End/media command replay on display resync.
 }
 
+void test_phone_demo_marker_is_presentation_only_and_exit_clears_it() {
+  moto::test::reset_phone_nav_bridge_probe();
+  moto::nav::NavPresenter presenter;
+  PhoneNavBridge bridge(presenter);
+  moto::ble::NavigationSnapshot nav;
+  nav.state = moto::ble::NavigationState::Navigating;
+  nav.flags = moto::ble::NavigationHasFix | moto::ble::NavigationHasNextManeuver;
+  nav.maneuver = moto::ble::Maneuver::Right;
+  nav.distance_to_maneuver_m = 120;
+  nav.accuracy_dm = 20;
+  nav.road_name = "WAYMATE DEMO";
+  nav.instruction = "前方右转";
+  CHECK(bridge.on_message(make_message(nav, 1)) == moto::ble::AckStatus::Ok);
+  pump(bridge);
+  CHECK(moto::test::phone_nav_bridge_last_simulated_input());
+  CHECK(!moto::test::phone_nav_bridge_last_demo_active());
+  CHECK(moto::test::phone_nav_bridge_last_maneuver() == MOTO_MANEUVER_RIGHT);
+  CHECK(moto::test::phone_nav_bridge_last_distance_to_maneuver_m() == 120);
+  nav.state = moto::ble::NavigationState::Idle;
+  nav.flags = 0; nav.road_name = "";
+  CHECK(bridge.on_message(make_message(nav, 2)) == moto::ble::AckStatus::Ok);
+  pump(bridge);
+  CHECK(!moto::test::phone_nav_bridge_last_simulated_input());
+  CHECK(!moto::test::phone_nav_bridge_last_demo_active());
+}
+
 }  // namespace
 
 int main() {
+  test_phone_demo_marker_is_presentation_only_and_exit_clears_it();
   test_backtrack_geometry_state_ordering_tombstone_and_reconnect();
   test_sender_is_called_without_bridge_state_lock();
   test_navigation_and_touch_updates_are_serialized();

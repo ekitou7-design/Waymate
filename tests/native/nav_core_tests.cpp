@@ -578,10 +578,52 @@ void test_stale_location_stream_clears_displayed_speed() {
   CHECK(fixture.core.snapshot().speed_mps == 0.0F);
 }
 
+
+// SIMULATED GNSS fixes through the production matcher; no live route proof.
+void test_competition_maneuver_progress_and_distance() {
+  NavCore core;
+  core.handle(NetworkChanged{NetworkState::Online});
+  core.handle(BeginNavigation{kEnd});
+  auto commands=core.handle(GnssFixReceived{fix(kStart,1'000)});
+  auto route=route_fixture();
+  route.total_distance_m=400;
+  route.maneuvers={
+    {1,ManeuverType::Unknown,20,"","向东行驶",0},
+    {2,ManeuverType::Right,80,"","右转",0},
+    {3,ManeuverType::Left,200,"","左转",0},
+    {4,ManeuverType::Continue,280,"","直行",0},
+    {5,ManeuverType::UTurnLeft,320,"","掉头",0},
+    {6,ManeuverType::Arrive,400,"","到达目的地",0}};
+  core.handle(RouteReady{commands[0].request_id,route,1'010});
+  CHECK(core.snapshot().next_maneuver.type==ManeuverType::Unknown);
+  TimestampMs now=2'000;
+  const auto move=[&](double progress) {
+    const Wgs84Point point{kStart.latitude_deg,
+      kStart.longitude_deg+(kEnd.longitude_deg-kStart.longitude_deg)*progress/400.0};
+    core.handle(GnssFixReceived{fix(point,now)}); now+=2'000;
+  };
+  move(30);
+  CHECK(core.snapshot().next_maneuver.type==ManeuverType::Right);
+  CHECK(std::abs(core.snapshot().distance_to_next_maneuver_m-50)<1);
+  move(60);
+  CHECK(core.snapshot().next_maneuver.id==2);
+  CHECK(std::abs(core.snapshot().distance_to_next_maneuver_m-20)<1);
+  move(82);
+  CHECK(core.snapshot().next_maneuver.type==ManeuverType::Left);
+  CHECK(std::abs(core.snapshot().distance_to_next_maneuver_m-118)<1);
+  move(202);
+  CHECK(core.snapshot().next_maneuver.type==ManeuverType::Continue);
+  move(282);
+  CHECK(core.snapshot().next_maneuver.type==ManeuverType::UTurnLeft);
+  move(322);
+  CHECK(core.snapshot().next_maneuver.type==ManeuverType::Arrive);
+}
+
 }  // namespace
 
 int main() {
   test_lifecycle_and_arrival();
+  test_competition_maneuver_progress_and_distance();
   test_offline_planning_resumes_on_network();
   test_deviation_hysteresis_and_reroute();
   test_explicit_web_deviation_fixture_while_offline();

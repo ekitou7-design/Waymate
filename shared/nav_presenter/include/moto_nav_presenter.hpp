@@ -1,6 +1,7 @@
 #pragma once
 
 #include "moto_nav_ui.h"
+#include "moto_mini_map.h"
 #include "moto/ble_protocol/ble_protocol.hpp"
 #include "nav_core/nav_core.hpp"
 
@@ -31,8 +32,10 @@ class NavPresenter {
   void apply_to_lvgl() const;
 
  private:
+  MiniMapCamera map_camera_;
   std::string road_name_;
   std::string next_road_name_;
+  std::string maneuver_instruction_;
   moto_ui_state_t ui_state_{};
   moto_ui_backtrack_state_t backtrack_ui_{};
 };

@@ -43,6 +43,9 @@ lv_display_t *board_port_get_display(void);
  */
 esp_err_t board_port_reveal_display(void);
 
+/** Drain queued display transfers. Caller must hold the display lock. */
+esp_err_t board_port_drain_display(void);
+
 /**
  * Lock LVGL for calls made outside the board-owned LVGL task.
  * timeout_ms == UINT32_MAX means wait indefinitely.

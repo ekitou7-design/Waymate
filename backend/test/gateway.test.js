@@ -50,6 +50,7 @@ test("exposes live readiness and provider-neutral place search", async (t) => {
     route_traffic: true,
     road_speed_limits: false,
     traffic_light_countdown: false,
+    real_navigation: true,
     surrounding_map: false,
     map_city_search: false,
   });

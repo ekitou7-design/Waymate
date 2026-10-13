@@ -177,9 +177,21 @@ extern "C" void app_main(void) {
   presenter.apply_to_lvgl();
   moto_nav_ui_set_music_page_enabled(0);
   phone_bridge.install_ui_callbacks();
-  board_port_unlock();
+  // Single-variable RC experiment: keep display submissions out of BLE init.
+  // Drain the boot transfer before starting BLE; retain the original buffers,
+  // task allocation order and steady-state refresh cadence.
+  const esp_err_t drain_result = board_port_drain_display();
+  if (drain_result != ESP_OK) {
+    board_port_unlock();
+    ESP_LOGE(kTag, "RC display drain failed before BLE: %s",
+             esp_err_to_name(drain_result));
+    vTaskDelete(nullptr);
+    return;
+  }
+  ESP_LOGI(kTag, "RC display drained; BLE init with display submissions locked");
 
   if (!phone_bridge.start_renderer()) {
+    board_port_unlock();
     ESP_LOGE(kTag, "UI renderer startup failed; BLE was not started");
     vTaskDelete(nullptr);
     return;
@@ -189,6 +201,8 @@ extern "C" void app_main(void) {
   transport.set_callbacks(receive_phone_message, update_phone_link,
                           &phone_bridge);
   const esp_err_t ble_result = transport.start();
+  board_port_unlock();
+  ESP_LOGI(kTag, "RC BLE init returned; display submissions unlocked");
   if (ble_result != ESP_OK) {
     ESP_LOGE(kTag, "BLE startup failed; display remains in offline mode: %s",
              esp_err_to_name(ble_result));

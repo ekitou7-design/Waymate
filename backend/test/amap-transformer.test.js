@@ -151,3 +151,37 @@ test("does not reinterpret traffic counts or average speeds as live driving guid
   assert.equal(route.speed_limit_kph, undefined);
   assert.equal(route.traffic_light_countdown_s, undefined);
 });
+
+// SIMULATED provider data: no live AMap call or hardware acceptance.
+test("competition RC preserves explicit relative actions and never invents a turn", async () => {
+  for (const [action, expected] of [
+    ["左转", "left"], ["右转", "right"], ["直行", "continue"],
+    ["掉头", "u_turn_left"], ["左转调头", "u_turn_left"],
+    ["靠左", "slight_left"], ["靠右", "slight_right"],
+    ["向左前方行驶", "slight_left"], ["向右前方行驶", "slight_right"],
+    ["", "unknown"], ["无基本导航动作", "unknown"], ["向东行驶", "unknown"],
+    ["沿道路行驶", "unknown"], ["到达目的地", "arrive"],
+  ]) assert.equal(mapAmapManeuver(action), expected, action);
+  assert.equal(mapAmapManeuver("右转", "靠左行驶进入主路"), "right");
+  assert.equal(mapAmapManeuver("直行", "到达出口"), "continue");
+  assert.equal(mapAmapManeuver("直行", "到达目的地"), "arrive");
+  const payload = await fixture();
+  const steps = payload.route.paths[0].steps;
+  steps[0].navi = {action: [], assistant_action: []};
+  steps[0].action = "右转";
+  steps[0].orientation = "东";
+  steps[0].step_distance = "80";
+  steps[1].navi = {action: "左转"};
+  steps[1].step_distance = "200";
+  let route = transformAmapRouteV2(payload);
+  assert.deepEqual(route.maneuvers.slice(0,2).map(m => [m.type,m.route_offset_m]),
+                   [["right",80],["left",280]]);
+  delete steps[0].action;
+  route = transformAmapRouteV2(payload);
+  assert.equal(route.maneuvers[0].type, "unknown");
+  for (const [action, text] of [["靠左", "靠左行驶"], ["靠右", "靠右行驶"]]) {
+    steps[0].navi = {action};
+    steps[0].instruction = "沿道路向东行驶";
+    assert.equal(transformAmapRouteV2(payload).maneuvers[0].instruction, text);
+  }
+});

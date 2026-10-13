@@ -267,7 +267,7 @@ dependencies:
   lvgl/lvgl:
     dependencies: []
     source:
-      path: /Volumes/硬盘/08 学AI/Waymate/third_party/lvgl
+      path: ../../../third_party/lvgl
       type: local
     version: '*'
   waveshare/esp32_s3_touch_amoled_1_75c:
